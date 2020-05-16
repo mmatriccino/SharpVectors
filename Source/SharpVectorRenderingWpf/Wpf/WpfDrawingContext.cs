@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Reflection;
 using System.Globalization;
 using System.Collections.Generic;
 
 using System.Windows;
 using System.Windows.Media;
+
+using SharpVectors.Runtime;
 
 namespace SharpVectors.Renderers.Wpf
 {
@@ -11,7 +14,14 @@ namespace SharpVectors.Renderers.Wpf
     {
         #region Private Fields
 
+        private const double DefaultDpi = 96.0d;
+
         private const string RegisteredIdKey = "_registeredIds";
+
+        private string _name;
+
+        protected readonly double _dpiX;
+        protected readonly double _dpiY;
 
         private bool _renderingClip;
         private bool _isFragment;
@@ -33,7 +43,8 @@ namespace SharpVectors.Renderers.Wpf
 
         private HashSet<string> _registeredIds;
 
-        private Dictionary<Guid, WpfSvgPaintContext> _paintContexts;
+        private WpfDrawingDocument _drawingDocument;
+        private Dictionary<string, WpfSvgPaintContext> _paintContexts;
 
         #endregion
 
@@ -46,6 +57,14 @@ namespace SharpVectors.Renderers.Wpf
 
         public WpfDrawingContext(bool isFragment, WpfDrawingSettings settings)
         {
+            var sysParam = typeof(SystemParameters);
+
+            var dpiXProperty = sysParam.GetProperty("DpiX", BindingFlags.NonPublic | BindingFlags.Static);
+            var dpiYProperty = sysParam.GetProperty("Dpi",  BindingFlags.NonPublic | BindingFlags.Static);
+
+            _dpiX = (int)dpiXProperty.GetValue(null, null);
+            _dpiY = (int)dpiYProperty.GetValue(null, null);
+
             if (settings == null)
             {
                 settings = new WpfDrawingSettings();                
@@ -54,7 +73,7 @@ namespace SharpVectors.Renderers.Wpf
             _isFragment    = isFragment;
             _settings      = settings;
             _drawStack     = new Stack<DrawingGroup>();
-            _paintContexts = new Dictionary<Guid, WpfSvgPaintContext>();
+            _paintContexts = new Dictionary<string, WpfSvgPaintContext>(StringComparer.Ordinal);
 
             _registeredIds = settings[RegisteredIdKey] as HashSet<string>;
             if (_registeredIds == null)
@@ -97,6 +116,16 @@ namespace SharpVectors.Renderers.Wpf
         #endregion
 
         #region Public Properties
+
+        public string Name
+        {
+            get {
+                return _name;
+            }
+            set {
+                _name = value;
+            }
+        }
 
         /// <summary>
         /// Gets the number of elements contained in the drawing stack.
@@ -235,6 +264,51 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
+        /// <summary>Gets the DPI along X axis.</summary>
+        /// <value>The DPI along the X axis.</value>
+        public double PixelsPerInchX
+        {
+            get {
+                return _dpiX;
+            }
+        }
+
+        /// <summary>Gets the DPI along Y axis.</summary>
+        /// <value>The DPI along the Y axis.</value>
+        public double PixelsPerInchY
+        {
+            get {
+                return _dpiY;
+            }
+        }
+
+        /// <summary>Gets the DPI scale on the X axis.</summary>
+        /// <value>The DPI scale for the X axis.</value>
+        public double DpiScaleX
+        {
+            get {
+                return _dpiX / DefaultDpi;
+            }
+        }
+
+        /// <summary>Gets the DPI scale on the Yaxis.</summary>
+        /// <value>The DPI scale for the Y axis.</value>
+        public double DpiScaleY
+        {
+            get {
+                return _dpiY / DefaultDpi;
+            }
+        }
+
+        /// <summary>Get or sets the PixelsPerDip at which the text should be rendered.</summary>
+        /// <value>The current PixelsPerDip value.</value>
+        public double PixelsPerDip
+        {
+            get {
+                return _dpiY / DefaultDpi;
+            }
+        }
+
         #endregion
 
         #region Internal Properties
@@ -319,31 +393,22 @@ namespace SharpVectors.Renderers.Wpf
             return false;
         }
 
-        //
-        // Summary:
-        //     Copies the drawing stack to an existing one-dimensional
-        //     System.Array, starting at the specified array index.
-        //
-        // Parameters:
-        //   array:
-        //     The one-dimensional System.Array that is the destination of the elements
-        //     copied from drawing stack. The System.Array must have
-        //     zero-based indexing.
-        //
-        //   arrayIndex:
-        //     The zero-based index in array at which copying begins.
-        //
-        // Exceptions:
-        //   System.ArgumentNullException:
-        //     array is null.
-        //
-        //   System.ArgumentOutOfRangeException:
-        //     arrayIndex is less than zero.
-        //
-        //   System.ArgumentException:
-        //     arrayIndex is equal to or greater than the length of array.  -or- The number
-        //     of elements in the source drawing stack is greater
-        //     than the available space from arrayIndex to the end of the destination array.
+        /// <summary>
+        /// Copies the drawing stack to an existing one-dimensional array, starting at the specified array index.
+        /// </summary>
+        /// <param name="array">
+        /// The one-dimensional System.Array that is the destination of the elements
+        /// copied from drawing stack. The array must have zero-based indexing.
+        /// </param>
+        /// <param name="arrayIndex">The zero-based index in array at which copying begins.</param>
+        /// <exception cref="System.ArgumentNullException">If <paramref name="array"/> is <see langword="null"/>.</exception>
+        /// <exception cref="System.ArgumentOutOfRangeException"><paramref name="arrayIndex"/> is less than zero.</exception>
+        /// <exception cref="System.ArgumentException">
+        /// <paramref name="arrayIndex"/> is equal to or greater than the length of array.
+        /// <para>-or-</para>
+        /// The number of elements in the source drawing stack is greater than the available 
+        /// space from <paramref name="arrayIndex"/> to the end of the destination array.
+        /// </exception>
         public void CopyTo(DrawingGroup[] array, int arrayIndex)
         {
             if (_drawStack != null)
@@ -352,40 +417,28 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
-        //
-        // Summary:
-        //     Returns the object at the top of the drawing stack
-        //     without removing it.
-        //
-        // Returns:
-        //     The object at the top of the drawing stack.
-        //
-        // Exceptions:
-        //   System.InvalidOperationException:
-        //     The drawing stack is empty.
+        /// <summary>
+        /// Returns the object at the top of the drawing stack without removing it.
+        /// </summary>
+        /// <returns>The object at the top of the drawing stack.</returns>
+        /// <exception cref="System.InvalidOperationException">The drawing stack is empty.</exception>
         public DrawingGroup Peek()
         {
-            if (_drawStack != null)
+            if (_drawStack != null && _drawStack.Count != 0)
             {
                 return _drawStack.Peek();
             }
-
             return null;
         }
 
-        //
-        // Summary:
-        //     Removes and returns the object at the top of the drawing stack.
-        //
-        // Returns:
-        //     The object removed from the top of the drawing stack.
-        //
-        // Exceptions:
-        //   System.InvalidOperationException:
-        //     The drawing stack is empty.
+        /// <summary>
+        /// Removes and returns the object at the top of the drawing stack.
+        /// </summary>
+        /// <returns>The object removed from the top of the drawing stack.</returns>
+        /// <exception cref="System.InvalidOperationException">The drawing stack is empty.</exception>
         public DrawingGroup Pop()
         {
-            if (_drawStack != null)
+            if (_drawStack != null && _drawStack.Count != 0)
             {
                 return _drawStack.Pop();
             }
@@ -393,14 +446,10 @@ namespace SharpVectors.Renderers.Wpf
             return null;
         }
 
-        //
-        // Summary:
-        //     Inserts an object at the top of the drawing stack.
-        //
-        // Parameters:
-        //   item:
-        //     The object to push onto the drawing stack. The value
-        //     can be null for reference types.
+        /// <summary>
+        /// Inserts an object at the top of the drawing stack.
+        /// </summary>
+        /// <param name="item">The object to push onto the drawing stack. The value can be null for reference types.</param>
         public void Push(DrawingGroup item)
         {
             if (_drawStack != null && item != null)
@@ -409,26 +458,23 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
-        //
-        // Summary:
-        //     Copies the drawing stack to a new array.
-        //
-        // Returns:
-        //     A new array containing copies of the elements of the drawing stack.
+        /// <summary>
+        /// Copies the drawing stack to a new array.
+        /// </summary>
+        /// <returns>A new array containing copies of the elements of the drawing stack.</returns>
         public DrawingGroup[] ToArray()
         {
             if (_drawStack != null)
             {
                 return _drawStack.ToArray();
             }
-
             return new DrawingGroup[0];
         }
 
-        //
-        // Summary:
-        //     Sets the capacity to the actual number of elements in the drawing stack,
-        //     if that number is less than 90 percent of current capacity.
+        /// <summary>
+        /// Sets the capacity to the actual number of elements in the drawing stack,
+        /// if that number is less than 90 percent of current capacity.
+        /// </summary>
         public void TrimExcess()
         {
             if (_drawStack != null)
@@ -458,7 +504,6 @@ namespace SharpVectors.Renderers.Wpf
 
             this.Push(_rootDrawing);
 
-
             if (_idVisitor != null && !_idVisitor.IsInitialized)
             {
                 _idVisitor.Initialize(this);
@@ -486,7 +531,7 @@ namespace SharpVectors.Renderers.Wpf
                 string groupId = _linkVisitor.AggregatedLayerName;
                 if (!string.IsNullOrWhiteSpace(groupId))
                 {
-                    Runtime.SvgObject.SetName(_linkDrawing, groupId);
+                    SvgObject.SetName(_linkDrawing, groupId);
                 }
 
                 _linkVisitor.Initialize(_linkDrawing, this);
@@ -517,8 +562,9 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
-        public void BeginDrawing()
+        public void BeginDrawing(WpfDrawingDocument drawingDocument)
         {
+            _drawingDocument = drawingDocument;
         }
 
         public void EndDrawing()
@@ -573,7 +619,7 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
-        public bool IsPaintContext(Guid guidId)
+        public bool IsPaintContext(string guidId)
         {
             if (_paintContexts != null && _paintContexts.Count != 0)
             {
@@ -583,7 +629,7 @@ namespace SharpVectors.Renderers.Wpf
             return false;
         }
 
-        public WpfSvgPaintContext GetPaintContext(Guid guidId)
+        public WpfSvgPaintContext GetPaintContext(string guidId)
         {
             if (_paintContexts != null && _paintContexts.Count != 0)
             {
@@ -603,11 +649,30 @@ namespace SharpVectors.Renderers.Wpf
             }
         }
 
-        public void UnRegisterPaintContext(Guid guidId)
+        public void UnRegisterPaintContext(string guidId)
         {
             if (_paintContexts != null)
             {
                 _paintContexts.Remove(guidId);
+            }
+        }
+
+        public void RegisterDrawing(string elementId, string uniqueId, Drawing drawing)
+        {
+            if (_drawingDocument != null)
+            {
+                if (_settings != null && _settings.IncludeRuntime)
+                {
+                    if (!string.IsNullOrWhiteSpace(elementId))
+                    {
+                        SvgObject.SetId(drawing, elementId);
+                    }
+                    if (!string.IsNullOrWhiteSpace(uniqueId))
+                    {
+                        SvgObject.SetUniqueId(drawing, uniqueId);
+                    }
+                }
+                _drawingDocument.Add(elementId, uniqueId, drawing);
             }
         }
 

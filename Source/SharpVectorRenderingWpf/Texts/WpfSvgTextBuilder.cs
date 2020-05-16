@@ -33,6 +33,10 @@ namespace SharpVectors.Renderers.Texts
 
         private double _textWidth;
 
+        private FontStyle _fontStyle;
+        private FontFamily _fontFamily;
+        private FontWeight _fontWeight;
+
         private int _unicodeRangeStart;
         private int _unicodeRangeEnd;
 
@@ -83,6 +87,36 @@ namespace SharpVectors.Renderers.Texts
         {
             get {
                 return (_unicodeRangeStart != -1 && _unicodeRangeStart != _unicodeRangeEnd);
+            }
+        }
+
+        public FontStyle FontStyle
+        {
+            get {
+                return _fontStyle;
+            }
+            set {
+                _fontStyle = value;
+            }
+        }
+
+        public FontWeight FontWeight
+        {
+            get {
+                return _fontWeight;
+            }
+            set {
+                _fontWeight = value;
+            }
+        }
+
+        public FontFamily FontFamily
+        {
+            get {
+                return _fontFamily;
+            }
+            set {
+                _fontFamily = value;
             }
         }
 
@@ -190,6 +224,40 @@ namespace SharpVectors.Renderers.Texts
         }
 
         /// <summary>
+        /// Gets a value that indicates the distance of the overline from the baseline for the typeface.
+        /// </summary>
+        /// <value>A <see cref="float"/> that indicates the overline position, measured from the baseline 
+        /// and expressed as a fraction of the font em size.</value>
+        /// <remarks>attribute name = "overline-position" {number}</remarks>
+        public override double OverlinePosition
+        {
+            get {
+                if (_fontFaceElement != null)
+                {
+                    return _fontFaceElement.OverlinePosition;
+                }
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Gets a value that indicates the thickness of the overline relative to the font em size for the typeface.
+        /// </summary>
+        /// <value>A <see cref="float"/> that indicates the overline thickness, expressed as a fraction 
+        /// of the font em size.</value>
+        /// <remarks>attribute name = "overline-thickness" {number}</remarks>
+        public override double OverlineThickness
+        {
+            get {
+                if (_fontFaceElement != null)
+                {
+                    return _fontFaceElement.OverlineThickness;
+                }
+                return 0;
+            }
+        }
+
+        /// <summary>
         /// Gets the distance from the baseline to the top of an English lowercase letter for a typeface. 
         /// The distance excludes ascenders.
         /// </summary>
@@ -245,19 +313,6 @@ namespace SharpVectors.Renderers.Texts
             }
         }
 
-        public string XmlLanguage
-        {
-            get {
-                var culture = this.Culture;
-                if (culture != null)
-                {
-                    return culture.TwoLetterISOLanguageName;
-                }
-
-                return string.Empty;
-            }
-        }
-
         #endregion
 
         #region Public Methods
@@ -282,11 +337,11 @@ namespace SharpVectors.Renderers.Texts
         {
             if (canBeWhitespace && string.IsNullOrEmpty(text))
             {
-                return Size.Empty;
+                return new Size(0, 0);
             }
-            else if (string.IsNullOrWhiteSpace(text))
+            if (!canBeWhitespace && string.IsNullOrWhiteSpace(text))
             {
-                return Size.Empty;
+                return new Size(0, 0);
             }
 
             var result   = new List<Rect>();
@@ -294,20 +349,100 @@ namespace SharpVectors.Renderers.Texts
             var nonEmpty = result.Where(r => r != Rect.Empty);
             if (!nonEmpty.Any())
             {
-                return Size.Empty;
+                return new Size(0, 0);
             }
-            return new Size(nonEmpty.Last().Right - nonEmpty.First().Left, this.Baseline);
+            //return new Size(nonEmpty.Last().Right - nonEmpty.First().Left, this.Baseline);
+            return new Size(_textWidth, this.Baseline);
         }
 
-        public override PathGeometry Build(SvgTextContentElement element, string text, double x, double y)
+        public override Geometry Build(SvgTextContentElement element, string text, double x, double y)
         {
-            var textPath = this.Build(element, text, null, false);
-            if (textPath.Figures != null && textPath.Figures.Count > 0)
+            var alignment = this.TextAlignment;
+            if (alignment != TextAlignment.Left)
             {
-                textPath.Transform = new TranslateTransform(x, y);
+                var textSize  = this.MeasureText(element, text, true);
+                var textWidth = Math.Max(textSize.Width, this.Width);
+                if (alignment == TextAlignment.Center)
+                {
+                    x -= textWidth / 2;
+                }
+                else
+                {
+                    x -= textWidth;
+                }
             }
 
-            return textPath;
+            var geomGroup = this.Build(element, text, null, false);
+            if (geomGroup == null)
+            {
+                return geomGroup;
+            }
+
+            if (_textDecorations == null || _textDecorations.Count == 0)
+            {
+                if (geomGroup.Children.Count != 0)
+                {
+                    geomGroup.Transform = new TranslateTransform(x, y);
+                }
+                if (_buildPathGeometry)
+                {
+                    var pathGeometry = new PathGeometry();
+                    pathGeometry.AddGeometry(geomGroup);
+                    return pathGeometry;
+                }
+
+                return geomGroup;
+            }
+
+            var baseline = this.Baseline;
+
+            foreach (var textDeDecoration in _textDecorations)
+            {
+                double decorationPos = 0;
+                double decorationThickness = 0;
+
+                if (textDeDecoration.Location == TextDecorationLocation.Strikethrough)
+                {
+                    decorationPos = baseline - (this.StrikethroughPosition * _emScale);
+                    decorationThickness = this.StrikethroughThickness * _emScale;
+                }
+                else if (textDeDecoration.Location == TextDecorationLocation.Underline)
+                {
+                    decorationPos = baseline - (this.UnderlinePosition * _emScale);
+                    decorationThickness = this.UnderlineThickness * _emScale;
+                }
+                else if (textDeDecoration.Location == TextDecorationLocation.OverLine)
+                {
+                    decorationPos = baseline - this.OverlinePosition * _emScale;
+                    decorationThickness = this.OverlineThickness * _emScale;
+                }
+                Rect bounds = new Rect(geomGroup.Bounds.Left, decorationPos, geomGroup.Bounds.Width, decorationThickness + 0.5);
+
+                var rectGeom = new RectangleGeometry(bounds);
+                if (_buildPathGeometry)
+                {
+                    PathGeometry pathGeometry = new PathGeometry();
+                    pathGeometry.AddGeometry(rectGeom);
+                    geomGroup.Children.Add(pathGeometry);
+                }
+                else
+                {
+                    geomGroup.Children.Add(rectGeom);
+                }
+            }
+
+            if (geomGroup.Children.Count != 0)
+            {
+                geomGroup.Transform = new TranslateTransform(x, y);
+            }
+            if (_buildPathGeometry)
+            {
+                var pathGeometry = new PathGeometry();
+                pathGeometry.AddGeometry(geomGroup);
+                return pathGeometry;
+            }
+
+            return geomGroup;
         }
 
         #endregion
@@ -316,22 +451,28 @@ namespace SharpVectors.Renderers.Texts
 
         #region Building
 
-        private PathGeometry Build(SvgTextContentElement element, string text, IList<Rect> textBounds, bool measureSpaces)
+        private GeometryGroup Build(SvgTextContentElement element, string text, IList<Rect> textBounds, bool measureSpaces)
         {
+            var textPath = new GeometryGroup();
+            textPath.FillRule = FillRule.Nonzero;
+
             if (string.IsNullOrEmpty(text))
             {
-                return new PathGeometry();
+                return textPath;
             }
 
-            _textIterator.Initialize(text);
+            var xmlLang = this.XmlLang; // Current language based on the lang/xml:lang of the text tag
+            if (string.IsNullOrWhiteSpace(xmlLang))
+            {
+                xmlLang = element.XmlLang;
+            }
 
-            var textPath = new PathGeometry();
+            _textIterator.Initialize(text, xmlLang);
 
             SvgGlyphElement prevGlyph = null;
             double xPos = 0;
 
             var baseline = this.Baseline + this.Alphabetic; //TODO: Better calculation here!
-            var xmlLang  = this.XmlLanguage; // Current language based on the lang/xml:lang of the text tag
 
             bool isAltGlyph = string.Equals(element.LocalName, AltGlyph, StringComparison.OrdinalIgnoreCase);
             SvgAltGlyphElement altGlyph = isAltGlyph ? (SvgAltGlyphElement)element : null;
@@ -364,11 +505,23 @@ namespace SharpVectors.Renderers.Texts
                     {
                         if (!_latinGlyphMaps.TryGet(inputText, xmlLang, out glyph))
                         {
-                            if (string.IsNullOrWhiteSpace(xmlLang) && this.WithinUnicodeRange(inputText))
-                            {
-                                glyph = _missingGlyph;
-                            }
                             prevGlyph = null;
+                            if (string.IsNullOrWhiteSpace(xmlLang))
+                            {
+                                if (this.HasUnicodeRange && this.WithinUnicodeRange(inputText))
+                                {
+                                    glyph = _missingGlyph;
+                                }
+                                else if (string.IsNullOrWhiteSpace(inputText))
+                                {
+                                    xPos += _font.HorizAdvX * _emScale;
+                                    continue;
+                                }
+                                //else
+                                //{
+                                //    glyph = _missingGlyph; //TODO
+                                //}
+                            }
                         }
                     }
                 }
@@ -377,21 +530,22 @@ namespace SharpVectors.Renderers.Texts
                     // Handle this as fall back...
                     if (_missingFallBack == null)
                     {
-                        _missingFallBack = Create(string.Empty, this.Culture, this.FontSize);
+                        //_missingFallBack = Create(string.Empty, this.Culture, this.FontSize);
+                        _missingFallBack = Create(_fontFamily, _fontStyle, _fontWeight, this.Culture, this.FontSize);
                     }
 
-                    var missingPath = _missingFallBack.Build(element, inputText, xPos, baseline);
+                    var missingPath = _missingFallBack.Build(element, inputText, xPos, baseline - _missingFallBack.Baseline);
                     //var missingTransform = new TransformGroup();
                     //missingTransform.Children.Add(new ScaleTransform(_emScale, -1 * _emScale));
                     //missingTransform.Children.Add(new TranslateTransform(xPos, ascent));
                     //missingPath.Transform = new TranslateTransform(xPos, ascent);
 
-                    if (textBounds != null)
+                    if (textBounds != null && missingPath != null)
                     {
                         Rect bounds = missingPath.Bounds;
                         if (measureSpaces && bounds == Rect.Empty)
                         {
-                            textBounds.Add(new Rect(xPos, 0, glyph.HorizAdvX * _emScale, baseline));
+                            textBounds.Add(new Rect(xPos, 0, _font.HorizAdvX * _emScale, baseline));
                         }
                         else
                         {
@@ -399,16 +553,19 @@ namespace SharpVectors.Renderers.Texts
                         }
                     }
 
-                    if (missingPath.Figures != null && missingPath.Figures.Count > 0)
+                    if (missingPath != null && !missingPath.IsEmpty())
                     {
-                        textPath.AddGeometry(missingPath);
+                        var transformdPath = new PathGeometry();
+                        transformdPath.AddGeometry(missingPath);
+
+                        textPath.Children.Add(transformdPath);
                     }
 
-//                    xPos += missingPath.Bounds.Width;
+                    //xPos += missingPath.Bounds.Width;
                     xPos += _missingFallBack.Width;
                     continue;
                 }
-                if (!this.IsVariantMatched())
+                if (!this.IsVariantMatched() || !this.IsStyleMatched())
                 {
                     bool isSmallCaps = false; // For simulation of small-caps
                     WpfTextBuilder selectedFallBack = null;
@@ -429,13 +586,14 @@ namespace SharpVectors.Renderers.Texts
                     {
                         if (_missingFallBack == null)
                         {
-                            _missingFallBack = Create(string.Empty, this.Culture, this.FontSize);
+//                            _missingFallBack = Create(string.Empty, this.Culture, this.FontSize);
+                            _missingFallBack = Create(_fontFamily, _fontStyle, _fontWeight, this.Culture, this.FontSize);
                         }
 
                         selectedFallBack = _missingFallBack;
                     }
 
-                    var missingPath = selectedFallBack.Build(element, inputText, xPos, baseline);
+                    var missingPath = selectedFallBack.Build(element, inputText, xPos, baseline - selectedFallBack.Baseline);
                     //var missingTransform = new TransformGroup();
                     //missingTransform.Children.Add(new ScaleTransform(_emScale, -1 * _emScale));
                     //missingTransform.Children.Add(new TranslateTransform(xPos, ascent));
@@ -450,7 +608,7 @@ namespace SharpVectors.Renderers.Texts
                         missingPath.Transform = missingTransform;
                     }
 
-                    if (textBounds != null)
+                    if (textBounds != null && missingPath != null)
                     {
                         Rect bounds = missingPath.Bounds;
                         if (measureSpaces && bounds == Rect.Empty)
@@ -463,9 +621,12 @@ namespace SharpVectors.Renderers.Texts
                         }
                     }
 
-                    if (missingPath.Figures != null && missingPath.Figures.Count > 0)
+                    if (missingPath != null && !missingPath.IsEmpty())
                     {
-                        textPath.AddGeometry(missingPath);
+                        var transformdPath = new PathGeometry();
+                        transformdPath.AddGeometry(missingPath);
+
+                        textPath.Children.Add(transformdPath);
                     }
                     prevGlyph = null;
 
@@ -482,6 +643,7 @@ namespace SharpVectors.Renderers.Texts
                 if (glyphPath == null)
                 {
                     glyphPath = new PathGeometry();
+                    glyphPath.FillRule = FillRule.Nonzero;
                     glyphPath.Figures = PathFigureCollection.Parse(glyph.D);
 
                     glyph.Tag = glyphPath; // Cache the original path geometry, it is not altered...
@@ -507,7 +669,11 @@ namespace SharpVectors.Renderers.Texts
 
                 if (glyphPath.Figures != null && glyphPath.Figures.Count > 0)
                 {
-                    textPath.AddGeometry(glyphPath);
+                    var transformdPath = new PathGeometry();
+                    transformdPath.FillRule = FillRule.Nonzero;
+                    transformdPath.AddGeometry(glyphPath);
+
+                    textPath.Children.Add(transformdPath);
                 }
 
                 xPos += glyph.HorizAdvX * _emScale;
@@ -523,7 +689,7 @@ namespace SharpVectors.Renderers.Texts
         {
             if (_unicodeRangeStart != -1 && _unicodeRangeStart != _unicodeRangeEnd)
             {
-                if (inputText.Length == 0)
+//                if (inputText.Length == 0)
                 {
                     int unicode = inputText[0];
                     return (unicode >= _unicodeRangeStart && unicode <= _unicodeRangeEnd);
@@ -549,12 +715,36 @@ namespace SharpVectors.Renderers.Texts
             return string.Equals(faceVariant, _fontVariant, StringComparison.OrdinalIgnoreCase);
         }
 
+        public bool IsStyleMatched()
+        {
+            if (_fontStyle != FontStyles.Normal)
+            {
+                var fontStyle = _font.FontFace.FontStyle;
+                if (string.IsNullOrWhiteSpace(fontStyle))
+                {
+                    return false;
+                }
+                if (string.Equals(fontStyle, "italic", StringComparison.OrdinalIgnoreCase))
+                {
+                    return _fontStyle == FontStyles.Italic;
+                }
+                if (string.Equals(fontStyle, "oblique", StringComparison.OrdinalIgnoreCase))
+                {
+                    return _fontStyle == FontStyles.Oblique || _fontStyle == FontStyles.Italic;
+                }
+            }
+            return true;
+        }
+
         #endregion
 
         #region Initialization
 
         private bool Initialize()
         {
+            _fontStyle  = FontStyles.Normal;
+            _fontWeight = FontWeights.Normal;
+
             _unicodeRangeStart = -1;
             _unicodeRangeEnd   = -1;
 
@@ -583,6 +773,10 @@ namespace SharpVectors.Renderers.Texts
             }
 
             var unicodeRange = _fontFaceElement.UnicodeRange;
+            if (string.IsNullOrWhiteSpace(unicodeRange))
+            {
+                unicodeRange = _font.UnicodeRange; // use the extension property...
+            }
             if (!string.IsNullOrWhiteSpace(unicodeRange))
             {
                 unicodeRange = unicodeRange.Substring(2).Replace(" ", ""); // move pass the U+
@@ -644,11 +838,11 @@ namespace SharpVectors.Renderers.Texts
                             string glyphLang = glyph.Lang;
                             if (string.IsNullOrWhiteSpace(glyphLang))
                             {
-                                neutralGlyphs.Add(glyphName, glyph);
+                                neutralGlyphs[glyphName] = glyph;
                                 if (string.Equals(glyphName, Whitespace, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    neutralGlyphs.Add(" ", glyph);
-                                    neutralGlyphs.Add("\u00A0", glyph);
+                                    neutralGlyphs[" "]      = glyph;
+                                    neutralGlyphs["\u00A0"] = glyph;
                                 }
                             }
                             else
@@ -1372,7 +1566,7 @@ namespace SharpVectors.Renderers.Texts
                 _attributes.Add(attribute);
             }
 
-            public abstract void Initialize(string inputText);
+            public abstract void Initialize(string inputText, string xmlLang);
 
             public abstract string GetArabicForm(int index);
 
@@ -1406,7 +1600,7 @@ namespace SharpVectors.Renderers.Texts
             public SvgAttributedTextIterator()
             {
                 _isCharMode = false;
-                _inputText = string.Empty;
+                _inputText  = string.Empty;
             }
 
             public override string this[int index]
@@ -1481,19 +1675,39 @@ namespace SharpVectors.Renderers.Texts
                 base.AddAttribute(attribute);
             }
 
-            public override void Initialize(string inputText)
+            public override void Initialize(string inputText, string xmlLang)
             {
-                bool isArabic = ArabicForms.IsArabicText(inputText);
+                bool isArabic = false;
 
-                if (isArabic)
+                var isRightToLeft = false;
+                if (!string.IsNullOrWhiteSpace(xmlLang))
                 {
-                    char[] charArray = inputText.ToCharArray();
+                    isArabic = string.Equals(xmlLang, "ar", StringComparison.OrdinalIgnoreCase);
+                    if (string.Equals(xmlLang, "ar", StringComparison.OrdinalIgnoreCase)      // Arabic language
+                        || string.Equals(xmlLang, "he", StringComparison.OrdinalIgnoreCase))  // Hebrew language
+                    {
+                        isRightToLeft = true;
+                    }
+
+                    if (!isArabic)
+                    {
+                        isArabic = ArabicForms.IsArabicText(inputText);
+                    }
+                }
+                else
+                {
+                    isArabic = ArabicForms.IsArabicText(inputText);
+                }
+
+                char[] charArray = inputText.ToCharArray();
+                if (isRightToLeft || isArabic)
+                {
                     Array.Reverse(charArray);
                     _inputText = new string(charArray);
                 }
                 else
                 {
-                    _inputText = string.Copy(inputText);
+                    _inputText = new string(charArray);
                 }
 
                 if (_multiCharList == null || _multiCharList.Count == 0)

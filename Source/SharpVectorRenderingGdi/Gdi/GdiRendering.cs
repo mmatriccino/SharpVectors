@@ -13,6 +13,8 @@ namespace SharpVectors.Renderers.Gdi
     {
         #region Private Fields
 
+        private static readonly Regex _reUrl = new Regex(@"^url\((?<uri>.+)\)$");
+
         private Matrix _transformMatrix;
         internal Color _uniqueColor;
         internal GdiGraphicsContainer _graphicsContainer;
@@ -851,8 +853,7 @@ namespace SharpVectors.Renderers.Gdi
 
         protected static string ExtractMarkerUrl(string propValue)
         {
-            Regex reUrl = new Regex(@"^url\((?<uri>.+)\)$");
-            Match match = reUrl.Match(propValue);
+            Match match = _reUrl.Match(propValue);
             if (match.Success)
             {
                 return match.Groups["uri"].Value;
@@ -870,6 +871,27 @@ namespace SharpVectors.Renderers.Gdi
                 string markerStartUrl  = ExtractMarkerUrl(styleElm.GetPropertyValue("marker-start", "marker"));
                 string markerMiddleUrl = ExtractMarkerUrl(styleElm.GetPropertyValue("marker-mid", "marker"));
                 string markerEndUrl    = ExtractMarkerUrl(styleElm.GetPropertyValue("marker-end", "marker"));
+                string markerAll       = ExtractMarkerUrl(styleElm.GetPropertyValue("marker", "marker"));
+
+                //  The SVG specification defines three properties to reference markers: marker-start, 
+                // marker -mid, marker-end. It also provides a shorthand property, marker. Using the marker 
+                // property from a style sheet is equivalent to using all three (start, mid, end). 
+                // However, shorthand properties cannot be used as presentation attributes.
+                if (!string.IsNullOrWhiteSpace(markerAll) && !IsPresentationMarker(styleElm))
+                {
+                    if (string.IsNullOrWhiteSpace(markerStartUrl))
+                    {
+                        markerStartUrl = markerAll;
+                    }
+                    if (string.IsNullOrWhiteSpace(markerMiddleUrl))
+                    {
+                        markerMiddleUrl = markerAll;
+                    }
+                    if (string.IsNullOrWhiteSpace(markerEndUrl))
+                    {
+                        markerEndUrl = markerAll;
+                    }
+                }
 
                 if (markerStartUrl.Length > 0)
                 {
@@ -903,6 +925,36 @@ namespace SharpVectors.Renderers.Gdi
                     }
                 }
             }
+        }
+
+        protected static bool IsPresentationMarker(SvgStyleableElement styleElm)
+        {
+            if (!string.IsNullOrWhiteSpace(styleElm.GetAttribute("marker")))
+            {
+                return true;
+            }
+            SvgElement parentElm = styleElm.ParentNode as SvgElement;
+            if (parentElm == null)
+            {
+                return false;
+            }
+            switch (parentElm.LocalName)
+            {
+                case "g":
+                    if (!string.IsNullOrWhiteSpace(parentElm.GetAttribute("marker")))
+                    {
+                        return true;
+                    }
+                    break;
+                case "use":
+                    if (!string.IsNullOrWhiteSpace(parentElm.GetAttribute("marker")))
+                    {
+                        return true;
+                    }
+                    //TODO--PAUL
+                    break;
+            }
+            return false;
         }
 
         #endregion

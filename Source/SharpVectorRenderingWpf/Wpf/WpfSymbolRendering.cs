@@ -158,13 +158,39 @@ namespace SharpVectors.Renderers.Wpf
 
         public override void Render(WpfDrawingRenderer renderer)
         {
+            // Register this drawing with the Drawing-Document...
+            if (_drawGroup != null)
+            {
+                this.Rendered(_drawGroup);
+            }
             base.Render(renderer);
         }
 
         public override void AfterRender(WpfDrawingRenderer renderer)
         {
-            base.AfterRender(renderer);
+            this.OnAfterRender(renderer);
 
+            base.AfterRender(renderer);
+        }
+
+        #endregion
+
+        #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _isRecursive = false;
+            _drawGroup   = null;
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private void OnAfterRender(WpfDrawingRenderer renderer)
+        {
             Debug.Assert(_drawGroup != null);
 
             WpfDrawingContext context = renderer.Context;

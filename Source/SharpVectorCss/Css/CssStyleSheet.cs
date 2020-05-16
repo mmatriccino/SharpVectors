@@ -8,12 +8,16 @@ using SharpVectors.Dom.Stylesheets;
 namespace SharpVectors.Dom.Css
 {
     /// <summary>
-    /// The CSSStyleSheet interface is a concrete interface used to represent a CSS style sheet i.e., 
+    /// The <see cref="ICssStyleSheet"/> interface is a concrete interface used to represent a CSS style sheet i.e., 
     /// a style sheet whose content type is "text/css".
     /// </summary>
     public class CssStyleSheet : StyleSheet, ICssStyleSheet
     {
         #region Private fields
+
+        //private static readonly Regex _reComment = new Regex(@"(//.*)|(/\*(.|\n)*?\*/)");
+        private static readonly Regex _reComment = new Regex(@"(?<!"")\/\*.+?\*\/(?!"")");
+        private static readonly Regex _reEscape  = new Regex(@"(""(.|\n)*?[^\\]"")|('(.|\n)*?[^\\]')");
 
         private readonly CssStyleSheetType _origin;
         private IList<string> _alReplacedStrings = new List<string>();
@@ -97,17 +101,18 @@ namespace SharpVectors.Dom.Css
 
         private string PreProcessContent()
         {
-            if (!string.IsNullOrWhiteSpace(this.SheetContent))
+            var styleContent = this.SheetContent;
+            if (!string.IsNullOrWhiteSpace(styleContent))
             {
                 // "escape" strings, eg: "foo" => "<<<number>>>"			
-                Regex re = new Regex(@"(""(.|\n)*?[^\\]"")|('(.|\n)*?[^\\]')");
                 _alReplacedStrings.Clear();
-                string s = re.Replace(SheetContent, new MatchEvaluator(StringReplaceEvaluator));
+                string s = _reEscape.Replace(styleContent, new MatchEvaluator(StringReplaceEvaluator));
+
+                // remove dual semicolon, which may affect the parsing...
+                s = s.Replace(";;", ";");
 
                 // remove comments
-                Regex reComment = new Regex(@"(//.*)|(/\*(.|\n)*?\*/)");
-                s = reComment.Replace(s, string.Empty);
-                return s;
+                return _reComment.Replace(s, string.Empty).Trim();
             }
             return string.Empty;
         }

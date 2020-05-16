@@ -269,11 +269,35 @@ namespace SharpVectors.Renderers.Wpf
             Geometry clipGeom   = this.ClipGeometry;
             Transform transform = this.Transform;
 
+            GeometryDrawing viewportDrawing = null;
+
+            // Support for Tiny 1.2 viewport-fill property...
+            if (_svgElement.HasAttribute("viewport-fill"))
+            {
+                var viewportFill = _svgElement.GetAttribute("viewport-fill");
+                if (!string.IsNullOrWhiteSpace(viewportFill))
+                {
+                    var brush = WpfFill.CreateViewportBrush(imageElement);
+                    if (brush != null)
+                    {
+                        var viewportBounds = new RectangleGeometry(destRect);
+                        viewportDrawing = new GeometryDrawing(brush, null, viewportBounds);
+                    }
+                }
+            }
+
             bool ownedGroup = true;
             if (drawGroup == null)
             {
                 drawGroup  = context.Peek();
                 ownedGroup = false;
+            }
+            else
+            {
+                if (viewportDrawing != null)
+                {
+                    drawGroup.Children.Insert(0, viewportDrawing);
+                }
             }
 
             Debug.Assert(drawGroup != null);
@@ -326,6 +350,10 @@ namespace SharpVectors.Renderers.Wpf
                     clipGroup.Children.Add(drawing);
                     if (!ownedGroup)
                     {
+                        if (viewportDrawing != null)
+                        {
+                            clipGroup.Children.Insert(0, viewportDrawing);
+                        }
                         drawGroup.Children.Add(clipGroup);
                     }
                 }
@@ -346,29 +374,35 @@ namespace SharpVectors.Renderers.Wpf
 
                     if (!_idAssigned && !string.IsNullOrWhiteSpace(elementId) && !context.IsRegisteredId(elementId))
                     {
-                        SvgObject.SetName(drawGroup, elementId);
-
                         context.RegisterId(elementId);
 
                         if (context.IncludeRuntime)
                         {
+                            SvgObject.SetName(drawGroup, elementId);
+
                             SvgObject.SetId(drawGroup, elementId);
                         }
                     }
+
+                    // Register this drawing with the Drawing-Document...
+                    this.Rendered(drawGroup);
                 }
                 else if (!_idAssigned)
                 {
                     if (!_idAssigned && !string.IsNullOrWhiteSpace(elementId) && !context.IsRegisteredId(elementId))
                     {
-                        SvgObject.SetName(imageSource, elementId);
-
                         context.RegisterId(elementId);
 
                         if (context.IncludeRuntime)
                         {
+                            SvgObject.SetName(imageSource, elementId);
+
                             SvgObject.SetId(imageSource, elementId);
                         }
                     }
+
+                    // Register this drawing with the Drawing-Document...
+                    this.Rendered(drawing);
                 }
             }
         }
@@ -376,6 +410,18 @@ namespace SharpVectors.Renderers.Wpf
         public override void AfterRender(WpfDrawingRenderer renderer)
         {
             base.AfterRender(renderer);
+        }
+
+        #endregion
+
+        #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _idAssigned       = false;
+            _embeddedRenderer = null;
         }
 
         #endregion
@@ -483,7 +529,7 @@ namespace SharpVectors.Renderers.Wpf
                         imageSource.CacheOption = BitmapCacheOption.OnLoad;
                         imageSource.CreateOptions = BitmapCreateOptions.IgnoreImageCache 
                             | BitmapCreateOptions.PreservePixelFormat;
-                        imageSource.UriSource     = imageUri;
+                        imageSource.UriSource    = imageUri;
                         imageSource.EndInit();
 
 //                        imageSource.Freeze();

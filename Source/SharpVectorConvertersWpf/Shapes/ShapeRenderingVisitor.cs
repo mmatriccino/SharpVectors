@@ -247,6 +247,7 @@ namespace SharpVectors.Converters.Shapes
             XmlElement refEl = useElement.ReferencedElement;
             if (refEl == null)
                 return;
+            XmlElement refElParent = (XmlElement)refEl.ParentNode;
 
             bool isImported = false;
             // For the external node, the documents are different, and we may not be
@@ -269,7 +270,6 @@ namespace SharpVectors.Converters.Shapes
                     isImported = true;
                 }
             }
-            XmlElement refElParent = (XmlElement)refEl.ParentNode;
             useElement.OwnerDocument.Static = true;
             useElement.CopyToReferencedElement(refEl);
             if (!isImported) // if imported, we do not need to remove it...
@@ -335,7 +335,7 @@ namespace SharpVectors.Converters.Shapes
                 }
                 else if (TryCast.Cast(child, out simpleText))
                 {
-                    geometry = ConstructTextGeometry(element as SvgTextElement, 
+                    geometry = ConstructTextGeometry(element as SvgTextBaseElement, 
                         simpleText.InnerText, position, out spanSize);
                     shape = WrapGeometry(geometry, element);
                     shape.IsHitTestVisible = false;

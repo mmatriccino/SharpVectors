@@ -7,16 +7,16 @@ namespace SharpVectors.Dom.Css
 {
     /// <summary>
     /// <para>
-    /// The CSSStyleDeclaration interface represents a single CSS declaration block. This interface may 
-    /// be used to determine the style properties currently set in a block or to set style properties 
-    /// explicitly within the block.
+    /// The <see cref="ICssStyleDeclaration"/> interface represents a single CSS declaration block. 
+    /// This interface may be used to determine the style properties currently set in a block or 
+    /// to set style properties explicitly within the block.
     /// </para>
     /// <para>
-    ///	While an implementation may not recognize all CSS properties within a CSS declaration block, it is 
-    ///	expected to provide access to all specified properties in the style sheet through the 
-    ///	CSSStyleDeclaration interface. Furthermore, implementations that support a specific level of CSS 
-    ///	should correctly handle CSS shorthand properties for that level. For a further discussion of 
-    ///	shorthand properties, see the CSS2Properties interface.
+    ///	While an implementation may not recognize all CSS properties within a CSS declaration block, 
+    ///	it is expected to provide access to all specified properties in the style sheet through the 
+    ///	<see cref="ICssStyleDeclaration"/> interface. Furthermore, implementations that support a 
+    ///	specific level of CSS should correctly handle CSS shorthand properties for that level. 
+    ///	For a further discussion of shorthand properties, see the CSS2Properties interface.
     /// </para>
     /// <para>
     /// This interface is also used to provide a read-only access to the computed values of an element. 
@@ -30,8 +30,43 @@ namespace SharpVectors.Dom.Css
     {
         #region Static Members
 
-        private static Regex _styleRegex = new Regex(
+        [ThreadStatic]
+        private static CssStyleDeclaration _emptyCssStyle;
+
+        internal const string UrlName     = "url:Name";
+        internal const string UrlMime     = "url:Mime";
+        internal const string UrlData     = "url:Data";
+        internal const string UrlEncoding = "url:Encoding";
+
+        private static readonly Regex _reComment = new Regex(@"(//.*)|(/\*(.|\n)*?\*/)");
+        private static readonly Regex _styleRegex = new Regex(
             @"^(?<name>[A-Za-z\-0-9]+)\s*:(?<value>[^;\}!]+)(!\s?(?<priority>important))?;?");
+        // We'll use your regex for extracting the valid URLs
+        private static readonly Regex _reUrls = new Regex(@"(?nx)
+                    url \s* \( \s*
+                        (
+                            (?! ['""] )
+                            (?<Url> [^\)]+ )
+                            (?<! ['""] )
+                            |
+                            (?<Quote> ['""] )
+                            (?<Url> .+? )
+                            \k<Quote>
+                        )
+                    \s* \)");
+
+        private static readonly Regex _reSplitCss = new Regex(@"([^:\s]+)*\s*:\s*([^;]+);");
+        private static readonly Regex _reSplitCssOther = new Regex(@"({|;)([^:{;]+:[^;}]+)(;|})");
+
+        private static readonly Regex _reUrlTidy = new Regex(@"(^|{|})(\\s*{[^}]*})");
+
+        private static readonly Regex _reEmbeddedUrl = new Regex(@"^(?<name>[A-Za-z\-0-9]+)\s*:\s*url\(data:(?<mime>[\w/\-\.]+);(?<encoding>\w+),(?<data>[^;\}!]+)(!\s?(?<priority>important))?;?");
+
+        // Enter properties that can validly contain a URL here (in lowercase):
+        private static readonly ISet<string> _validUrlProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "src", "background", "background-image"
+        };
 
         #endregion
 
@@ -49,12 +84,12 @@ namespace SharpVectors.Dom.Css
         /// <summary>
         /// The constructor used internally when collecting styles for a specified element
         /// </summary>
-        internal CssStyleDeclaration()
+        protected CssStyleDeclaration()
         {
             _origin     = CssStyleSheetType.Collector;
             _readOnly   = true;
             _parentRule = null;
-            _styles     = new Dictionary<string, CssStyleBlock>();
+            _styles     = new Dictionary<string, CssStyleBlock>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -130,39 +165,44 @@ namespace SharpVectors.Dom.Css
         /// </remarks>
         public static string GetValidUrlFromCSS(string cssStr, string validProperty)
         {
-            // We'll use your regex for extracting the valid URLs
-            var reUrls = new Regex(@"(?nx)
-                    url \s* \( \s*
-                        (
-                            (?! ['""] )
-                            (?<Url> [^\)]+ )
-                            (?<! ['""] )
-                            |
-                            (?<Quote> ['""] )
-                            (?<Url> .+? )
-                            \k<Quote>
-                        )
-                    \s* \)");
             // First, remove all the comments
-            cssStr = Regex.Replace(cssStr, "\\/\\*.*?\\*\\/", String.Empty);
+            cssStr = _reComment.Replace(cssStr, string.Empty).Trim();
             // Next remove all the the property groups with no selector
             string oldStr;
             do
             {
                 oldStr = cssStr;
-                cssStr = Regex.Replace(cssStr, "(^|{|})(\\s*{[^}]*})", "$1");
+                cssStr = _reUrlTidy.Replace(cssStr, "$1");
             } while (cssStr != oldStr);
             // Get properties
-            var matches = Regex.Matches(cssStr, "({|;)([^:{;]+:[^;}]+)(;|})");
+            var matches = _reSplitCss.Matches(cssStr);
+            foreach (Match match in matches)
+            {
+                // Matches: (0)=src:url(woffs/ZCSB.woff) format("woff"); | (1)=src | (2)=url(woffs/ZCSB.woff) format("woff") 
+                if (match.Groups != null && match.Groups.Count == 3)
+                {
+                    if (string.Equals(validProperty, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Since this is a valid property, extract the URL (if there is one)
+                        MatchCollection validUrlCollection = _reUrls.Matches(match.Groups[2].Value);
+                        if (validUrlCollection.Count > 0)
+                        {
+                            return validUrlCollection[0].Groups["Url"].Value;
+                        }
+                    }
+                }
+            }
+
+            // Get properties
+            matches = _reSplitCssOther.Matches(cssStr);
             foreach (Match match in matches)
             {
                 string matchVal = match.Groups[2].Value;
                 string[] matchArr = matchVal.Split(':');
-                if (string.Equals(validProperty, matchArr[0].Trim(),
-                    StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(validProperty, matchArr[0].Trim(), StringComparison.OrdinalIgnoreCase))
                 {
                     // Since this is a valid property, extract the URL (if there is one)
-                    MatchCollection validUrlCollection = reUrls.Matches(matchVal);
+                    MatchCollection validUrlCollection = _reUrls.Matches(matchVal);
                     if (validUrlCollection.Count > 0)
                     {
                         return validUrlCollection[0].Groups["Url"].Value;
@@ -174,51 +214,57 @@ namespace SharpVectors.Dom.Css
 
         public static IList<string> GetValidUrlsFromCSS(string cssStr)
         {
-            //Enter properties that can validly contain a URL here (in lowercase):
-            ISet<string> validProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "src", "background", "background-image"
-            };
-
             List<string> validUrls = new List<string>();
-            //We'll use your regex for extracting the valid URLs
-            var reUrls = new Regex(@"(?nx)
-                    url \s* \( \s*
-                        (
-                            (?! ['""] )
-                            (?<Url> [^\)]+ )
-                            (?<! ['""] )
-                            |
-                            (?<Quote> ['""] )
-                            (?<Url> .+? )
-                            \k<Quote>
-                        )
-                    \s* \)");
             // First, remove all the comments
-            cssStr = Regex.Replace(cssStr, "\\/\\*.*?\\*\\/", String.Empty);
+            cssStr = _reComment.Replace(cssStr, string.Empty).Trim();
             // Next remove all the the property groups with no selector
             string oldStr;
             do
             {
                 oldStr = cssStr;
-                cssStr = Regex.Replace(cssStr, "(^|{|})(\\s*{[^}]*})", "$1");
+                cssStr = _reUrlTidy.Replace(cssStr, "$1");
             } while (cssStr != oldStr);
+
             // Get properties
-            var matches = Regex.Matches(cssStr, "({|;)([^:{;]+:[^;}]+)(;|})");
+            var matches = _reSplitCss.Matches(cssStr);
+            foreach (Match match in matches)
+            {
+                // Matches: (0)=src:url(woffs/ZCSB.woff) format("woff"); | (1)=src | (2)=url(woffs/ZCSB.woff) format("woff") 
+                if (match.Groups != null && match.Groups.Count == 3)
+                {
+                    if (_validUrlProps.Contains(match.Groups[1].Value))
+                    {
+                        // Since this is a valid property, extract the URL (if there is one)
+                        MatchCollection validUrlCollection = _reUrls.Matches(match.Groups[2].Value);
+                        if (validUrlCollection.Count > 0)
+                        {
+                            validUrls.Add(validUrlCollection[0].Groups["Url"].Value);
+                        }
+                    }
+                }
+            }
+            if (validUrls.Count != 0)
+            {
+                return validUrls;
+            }
+
+            // Get properties
+            matches = _reSplitCssOther.Matches(cssStr);
             foreach (Match match in matches)
             {
                 string matchVal = match.Groups[2].Value;
                 string[] matchArr = matchVal.Split(':');
-                if (validProperties.Contains(matchArr[0].Trim()))
+                if (_validUrlProps.Contains(matchArr[0].Trim()))
                 {
                     // Since this is a valid property, extract the URL (if there is one)
-                    MatchCollection validUrlCollection = reUrls.Matches(matchVal);
+                    MatchCollection validUrlCollection = _reUrls.Matches(matchVal);
                     if (validUrlCollection.Count > 0)
                     {
                         validUrls.Add(validUrlCollection[0].Groups["Url"].Value);
                     }
                 }
             }
+
             return validUrls;
         }
 
@@ -228,6 +274,10 @@ namespace SharpVectors.Dom.Css
 
         private string ParseString(string cssText)
         {
+            if (string.IsNullOrWhiteSpace(cssText))
+            {
+                return string.Empty;
+            }
             bool startedWithABracket = false;
 
             cssText = cssText.Trim();
@@ -237,14 +287,51 @@ namespace SharpVectors.Dom.Css
                 startedWithABracket = true;
             }
 
+            var quotes = new char[2] { '\'', '"' };
+
             Match match = _styleRegex.Match(cssText);
             while (match.Success)
             {
-                string name = match.Groups["name"].Value;
-                string value = match.Groups["value"].Value;
+                string name  = match.Groups["name"].Value.Trim();
+                string value = match.Groups["value"].Value.Trim();
                 if (_parentRule != null)
                 {
                     value = ((CssRule)_parentRule).DeReplaceStrings(value);
+                }
+                value = value.Trim(quotes);
+
+                if (value.StartsWith("url(", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (value.IndexOf("data:", StringComparison.OrdinalIgnoreCase) > 0)
+                    {
+                        var matchUrl = _reEmbeddedUrl.Match(cssText);
+                        if (matchUrl != null && matchUrl.Groups != null && matchUrl.Groups.Count >= 3)
+                        {
+                            var nameUrl     = matchUrl.Groups["name"].Value;
+                            var mimeUrl     = matchUrl.Groups["mime"].Value;
+                            var encodingUrl = matchUrl.Groups["encoding"].Value;
+                            var dataUrl     = matchUrl.Groups["data"].Value;
+
+                            if (string.Equals(name, nameUrl, StringComparison.Ordinal) 
+                                && !string.IsNullOrWhiteSpace(mimeUrl)
+                                && !string.IsNullOrWhiteSpace(encodingUrl)
+                                && !string.IsNullOrWhiteSpace(dataUrl))
+                            {
+                                value = matchUrl.Groups[0].Value.Remove(0, name.Length + 1).TrimEnd(';');
+                                match = matchUrl;
+
+                                int foundAt = dataUrl.IndexOf(")", StringComparison.Ordinal);
+
+                                if (!_styles.ContainsKey(UrlName) && foundAt > 0)
+                                {
+                                    _styles.Add(UrlName,     new CssStyleBlock(UrlName, nameUrl, string.Empty, _origin));
+                                    _styles.Add(UrlMime,     new CssStyleBlock(UrlMime, mimeUrl, string.Empty, _origin));
+                                    _styles.Add(UrlData,     new CssStyleBlock(UrlData, dataUrl.Substring(0, foundAt), string.Empty, _origin));
+                                    _styles.Add(UrlEncoding, new CssStyleBlock(UrlEncoding, encodingUrl, string.Empty, _origin));
+                                }
+                            }
+                        }
+                    }
                 }
                 string prio = match.Groups["priority"].Value;
 
@@ -264,7 +351,6 @@ namespace SharpVectors.Dom.Css
                 else
                 {
                     addStyle = true;
-
                 }
 
                 if (addStyle)
@@ -273,7 +359,7 @@ namespace SharpVectors.Dom.Css
                 }
 
                 cssText = cssText.Substring(match.Length).Trim();
-                match = _styleRegex.Match(cssText);
+                match   = _styleRegex.Match(cssText);
             }
 
             cssText = cssText.Trim();
@@ -332,7 +418,8 @@ namespace SharpVectors.Dom.Css
         }
 
         /// <summary>
-        /// Used to retrieve the priority of a CSS property (e.g. the "important" qualifier) if the property has been explicitly set in this declaration block.
+        /// Used to retrieve the priority of a CSS property (e.g. the "important" qualifier) if the property 
+        /// has been explicitly set in this declaration block.
         /// </summary>
         /// <param name="propertyName">The name of the CSS property. See the CSS property index.</param>
         /// <returns>A string representing the priority (e.g. "important") if one exists. The empty string if none exists.</returns>
@@ -345,8 +432,11 @@ namespace SharpVectors.Dom.Css
         /// Used to remove a CSS property if it has been explicitly set within this declaration block.
         /// </summary>
         /// <param name="propertyName">The name of the CSS property. See the CSS property index.</param>
-        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. Returns the empty string if the property has not been set or the property name does not correspond to a known CSS property.</returns>
-        /// <exception cref="DomException">NO_MODIFICATION_ALLOWED_ERR: Raised if this declaration is readonly or the property is readonly.</exception>
+        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. 
+        /// Returns the empty string if the property has not been set or the property name does not correspond 
+        /// to a known CSS property.</returns>
+        /// <exception cref="DomException">NO_MODIFICATION_ALLOWED_ERR: Raised if this declaration is readonly 
+        /// or the property is readonly.</exception>
         public string RemoveProperty(string propertyName)
         {
             if (_readOnly)
@@ -363,10 +453,14 @@ namespace SharpVectors.Dom.Css
         }
 
         /// <summary>
-        /// Used to retrieve the object representation of the value of a CSS property if it has been explicitly set within this declaration block. This method returns null if the property is a shorthand property. Shorthand property values can only be accessed and modified as strings, using the getPropertyValue and setProperty methods.
+        /// Used to retrieve the object representation of the value of a CSS property if it has been explicitly set 
+        /// within this declaration block. This method returns null if the property is a shorthand property. 
+        /// Shorthand property values can only be accessed and modified as strings, using the getPropertyValue and 
+        /// setProperty methods.
         /// </summary>
         /// <param name="propertyName">The name of the CSS property. See the CSS property index.</param>
-        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. Returns null if the property has not been set.</returns>
+        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. 
+        /// Returns null if the property has not been set.</returns>
         public virtual ICssValue GetPropertyCssValue(string propertyName)
         {
             if (_styles.ContainsKey(propertyName))
@@ -385,10 +479,31 @@ namespace SharpVectors.Dom.Css
         /// Used to retrieve the value of a CSS property if it has been explicitly set within this declaration block.
         /// </summary>
         /// <param name="propertyName">The name of the CSS property. See the CSS property index.</param>
-        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. Returns the empty string if the property has not been set.</returns>
+        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. 
+        /// Returns the empty string if the property has not been set.</returns>
         public virtual string GetPropertyValue(string propertyName)
         {
             return (_styles.ContainsKey(propertyName)) ? _styles[propertyName].Value.Trim('\'') : string.Empty;
+        }
+
+        /// <summary>
+        /// Used to retrieve the value of a CSS property if it has been explicitly set within this declaration block.
+        /// </summary>
+        /// <param name="propertyNames">The name of the CSS property. See the CSS property index.</param>
+        /// <returns>Returns the value of the property if it has been explicitly set for this declaration block. 
+        /// Returns the empty string if the property has not been set.</returns>
+        public virtual string GetPropertyValue(string[] propertyNames)
+        {
+            if (propertyNames == null || propertyNames.Length == 0)
+            {
+                return string.Empty;
+            }
+            foreach (var propertyName in propertyNames)
+            {
+                if (_styles.ContainsKey(propertyName))
+                    return _styles[propertyName].Value.Trim('\'');
+            }
+            return string.Empty;
         }
 
         /// <summary>
@@ -402,7 +517,8 @@ namespace SharpVectors.Dom.Css
         }
 
         /// <summary>
-        /// The number of properties that have been explicitly set in this declaration block. The range of valid indices is 0 to length-1 inclusive.
+        /// The number of properties that have been explicitly set in this declaration block. 
+        /// The range of valid indices is 0 to length-1 inclusive.
         /// </summary>
         public virtual ulong Length
         {
@@ -412,7 +528,9 @@ namespace SharpVectors.Dom.Css
         }
 
         /// <summary>
-        /// The parsable textual representation of the declaration block (excluding the surrounding curly braces). Setting this attribute will result in the parsing of the new value and resetting of all the properties in the declaration block including the removal or addition of properties.
+        /// The parsable textual representation of the declaration block (excluding the surrounding curly braces). 
+        /// Setting this attribute will result in the parsing of the new value and resetting of all the properties 
+        /// in the declaration block including the removal or addition of properties.
         /// </summary>
         /// <exception cref="DomException">SYNTAX_ERR: Raised if the specified CSS string value has a syntax error and is unparsable.</exception>
         /// <exception cref="DomException">NO_MODIFICATION_ALLOWED_ERR: Raised if this declaration is readonly or a property is readonly.</exception>
@@ -421,15 +539,12 @@ namespace SharpVectors.Dom.Css
             get {
                 StringBuilder builder = new StringBuilder();
 
-                //string ret = string.Empty;
-
                 IEnumerator<KeyValuePair<string, CssStyleBlock>> enu = _styles.GetEnumerator();
                 while (enu.MoveNext())
                 {
                     CssStyleBlock style = enu.Current.Value;
                     builder.Append(style.CssText);
                     builder.Append(";");
-                    //ret += style.CssText + ";";
                 }
 
                 return builder.ToString();
@@ -440,7 +555,9 @@ namespace SharpVectors.Dom.Css
         }
 
         /// <summary>
-        /// Used to retrieve the properties that have been explicitly set in this declaration block. The order of the properties retrieved using this method does not have to be the order in which they were set. This method can be used to iterate over all properties in this declaration block.
+        /// Used to retrieve the properties that have been explicitly set in this declaration block. 
+        /// The order of the properties retrieved using this method does not have to be the order in which they were set. 
+        /// This method can be used to iterate over all properties in this declaration block.
         /// The name of the property at this ordinal position. The empty string if no property exists at this position.
         /// </summary>
         public virtual string this[ulong index]
@@ -461,6 +578,49 @@ namespace SharpVectors.Dom.Css
 
                 return enu.Key;
             }
+        }
+
+        #endregion
+
+        #region Internal Properties and Methods
+
+        internal static CssStyleDeclaration EmptyCssStyle
+        {
+            get {
+                if (_emptyCssStyle == null)
+                {
+                    _emptyCssStyle = new CssStyleDeclaration();
+                }
+
+                return _emptyCssStyle;
+            }
+        }
+
+        internal CssStyleBlock Get(string key)
+        {
+            if (_styles != null && _styles.Count != 0 && _styles.ContainsKey(key))
+            {
+                return _styles[key];
+            }
+            return null;
+        }
+
+        internal string GetValue(string key)
+        {
+            if (_styles != null && _styles.Count != 0 && _styles.ContainsKey(key))
+            {
+                return _styles[key].Value;
+            }
+            return null;
+        }
+
+        internal bool Contains(string key)
+        {
+            if (_styles != null && _styles.Count != 0)
+            {
+                return _styles.ContainsKey(key);
+            }
+            return false;
         }
 
         #endregion

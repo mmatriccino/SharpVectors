@@ -1,7 +1,9 @@
-﻿namespace SharpVectors.Dom.Svg
+﻿using System;
+
+namespace SharpVectors.Dom.Svg
 {
     /// <summary>
-    /// The SvgFontFaceFormatElement interface corresponds to the 'font-face-format' element. 
+    /// The <see cref="ISvgFontFaceFormatElement"/> interface corresponds to the <c>font-face-format'</c>' element. 
     /// </summary>
     public sealed class SvgFontFaceFormatElement : SvgElement, ISvgFontFaceFormatElement
     {

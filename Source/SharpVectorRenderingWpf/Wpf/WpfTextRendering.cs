@@ -30,7 +30,7 @@ namespace SharpVectors.Renderers.Wpf
 
         private double _textWidth;
 
-        private SvgTextElement _textElement;
+        private SvgTextBaseElement _textElement;
 
         private DrawingGroup _drawGroup;
         private DrawingContext _drawContext;
@@ -48,7 +48,7 @@ namespace SharpVectors.Renderers.Wpf
         public WpfTextRendering(SvgElement element)
             : base(element)
         {
-            _textElement = element as SvgTextElement;
+            _textElement = element as SvgTextBaseElement;
             if (_textElement == null)
             {
                 throw new InvalidOperationException();
@@ -234,7 +234,7 @@ namespace SharpVectors.Renderers.Wpf
 
             Point ctp = new Point(0, 0); // current text position
 
-            WpfTextPlacement placement = WpfTextPlacement.Create(_textElement, ctp);
+            WpfTextPlacement placement = WpfTextPlacement.Create(_textElement, ctp, _textContext.IsTextPath);
             ctp = placement.Location;
             double rotate = placement.Rotation;
             if (!placement.HasPositions)
@@ -275,15 +275,20 @@ namespace SharpVectors.Renderers.Wpf
             if (svgDoc.IsFontsLoaded == false)
             {
                 //TODO: Use of SpinUntil is known to CPU heavy, but will work for now...
-                SpinWait.SpinUntil(() => svgDoc.IsFontsLoaded == true);
+                //SpinWait.SpinUntil(() => svgDoc.IsFontsLoaded == true);
+
+                var svgWnd = svgDoc.Window as SvgWindow;
+                if (svgWnd != null)
+                {
+                    svgWnd.AwaitTasks("SvgDocument");
+                }
             }
 
             XmlNodeType nodeType = XmlNodeType.None;
 
             bool isVertical = false;
             string writingMode = _textElement.GetPropertyValue("writing-mode");
-            if (!string.IsNullOrWhiteSpace(writingMode) &&
-                string.Equals(writingMode, "tb", comparer))
+            if (!string.IsNullOrWhiteSpace(writingMode) && string.Equals(writingMode, "tb", comparer))
             {
                 isVertical = true;
             }
@@ -386,6 +391,10 @@ namespace SharpVectors.Renderers.Wpf
                                 // No need to render the last white space...
                                 nodeText = nodeText.TrimEnd();
                             }
+                            else if (i == 0)
+                            {
+                                nodeText = nodeText.Trim();
+                            }
 
                             if (isVertical)
                             {
@@ -410,7 +419,7 @@ namespace SharpVectors.Renderers.Wpf
                             else if (string.Equals(nodeName, "tspan", comparer))
                             {
                                 bool isAdded = false;
-                                if ((i + 1) < nodeCount)
+                                if ((i + 1) < nodeCount - 1)
                                 {
                                     XmlNode nextChild = nodeList[i + 1];
                                     if (nextChild.NodeType == XmlNodeType.Whitespace)
@@ -480,6 +489,10 @@ namespace SharpVectors.Renderers.Wpf
                             // No need to render the last white space...
                             nodeText = nodeText.TrimEnd();
                         }
+                        else if (i == 0)
+                        {
+                            nodeText = nodeText.Trim();
+                        }
 
                         if (isVertical)
                         {
@@ -508,7 +521,7 @@ namespace SharpVectors.Renderers.Wpf
                         else if (string.Equals(nodeName, "tspan", comparer))
                         {
                             bool isAdded = false;
-                            if ((i + 1) < nodeCount)
+                            if ((i + 1) < nodeCount - 1)
                             {
                                 XmlNode nextChild = nodeList[i + 1];
                                 if (nextChild.NodeType == XmlNodeType.Whitespace)
@@ -558,6 +571,12 @@ namespace SharpVectors.Renderers.Wpf
                     }
                 }
             }
+
+            // Register this drawing with the Drawing-Document...
+            if (_drawGroup != null)
+            {
+                this.Rendered(_drawGroup);
+            }
         }
 
         public void SetTextWidth(double textWidth)
@@ -574,8 +593,13 @@ namespace SharpVectors.Renderers.Wpf
 
         #region AfterRender Method
 
-        private static void ResetGuidelineSet(DrawingGroup group)
+        private void ResetGuidelineSet(DrawingGroup group)
         {
+            if (_isTextPath)
+            {
+                return;
+            }
+
             DrawingCollection drawings = group.Children;
             int itemCount = drawings.Count;
             for (int i = 0; i < itemCount; i++)
@@ -595,17 +619,14 @@ namespace SharpVectors.Renderers.Wpf
             if (_horzRenderer != null)
             {
                 _horzRenderer.Uninitialize();
-                _horzRenderer = null;
             }
             if (_vertRenderer != null)
             {
                 _vertRenderer.Uninitialize();
-                _vertRenderer = null;
             }
             if (_pathRenderer != null)
             {
                 _pathRenderer.Uninitialize();
-                _pathRenderer = null;
             }
 
             if (_drawContext != null)
@@ -622,6 +643,22 @@ namespace SharpVectors.Renderers.Wpf
             if (_drawGroup != null)
             {
                 ResetGuidelineSet(_drawGroup);
+
+                if (_drawGroup.Children.Count == 1 &&
+                    (_drawGroup.Transform == null && _drawGroup.ClipGeometry == null))
+                {
+                    DrawingGroup firstGroup = _drawGroup.Children[0] as DrawingGroup;
+                    if (firstGroup != null && firstGroup.Transform == null && firstGroup.ClipGeometry == null)
+                    {
+                        _drawGroup.Children.RemoveAt(0);
+                        foreach (var drawing in firstGroup.Children)
+                        {
+                            _drawGroup.Children.Add(drawing);
+                        }
+
+                        firstGroup = null;
+                    }
+                }
             }
 
             if (context.IncludeRuntime)
@@ -648,29 +685,29 @@ namespace SharpVectors.Renderers.Wpf
             {
                 if (_drawGroup != null)
                 {
+                    DrawingGroup currentGroup = _context.Peek();
+                    Debug.Assert(currentGroup != null);
                     if (_isTextPath || _drawGroup.Transform != null || _drawGroup.ClipGeometry != null)
                     {
-                        DrawingGroup curGroup = _context.Peek();
-                        Debug.Assert(curGroup != null);
-                        if (curGroup != null)
+                        if (currentGroup != null)
                         {
-                            curGroup.Children.Add(_drawGroup);
+                            currentGroup.Children.Add(_drawGroup);
                         }
                     }
                     else if (_drawGroup.Children.Count != 0)
                     {
-                        DrawingGroup firstGroup = _drawGroup.Children[0] as DrawingGroup;
-                        if (firstGroup != null && firstGroup.Children.Count != 0)
+                        if (currentGroup != null)
                         {
-                            //Drawing firstDrawing = firstGroup.Children[0];
-
-                            DrawingGroup curGroup = _context.Peek();
-                            Debug.Assert(curGroup != null);
-                            if (curGroup != null)
-                            {
-                                curGroup.Children.Add(_drawGroup);
-                            }
+                            currentGroup.Children.Add(_drawGroup);
                         }
+                        //DrawingGroup firstGroup = _drawGroup.Children[0] as DrawingGroup;
+                        //if (firstGroup != null && firstGroup.Children.Count != 0)
+                        //{
+                        //    if (currentGroup != null)
+                        //    {
+                        //        currentGroup.Children.Add(_drawGroup);
+                        //    }
+                        //}
                     }
                 }
             }
@@ -689,13 +726,71 @@ namespace SharpVectors.Renderers.Wpf
                 }
             }
 
-            _context = null;
+            _context   = null;
             _drawGroup = null;
 
             base.AfterRender(renderer);
         }
 
         #endregion
+
+        #endregion
+
+        #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _isMeasuring  = false;
+            _isGroupAdded = false;
+            _isTextPath   = false;
+            _textWidth    = 0;
+            _drawGroup    = null;
+
+            _textElement = element as SvgTextBaseElement;
+            if (_textElement == null)
+            {
+                throw new InvalidOperationException();
+            }
+
+            if (_textContext == null)
+            {
+                _textContext  = new WpfTextContext(_textElement, this);
+            }
+            else
+            {
+                _textContext.SetElement(_textElement);
+            }
+
+            if (_horzRenderer == null)
+            {
+                _horzRenderer = new WpfHorzTextRenderer(_textElement, this);
+            }
+            else
+            {
+                _horzRenderer.Uninitialize();
+                _horzRenderer.SetElement(_textElement);
+            }
+            if (_vertRenderer == null)
+            {
+                _vertRenderer = new WpfVertTextRenderer(_textElement, this);
+            }
+            else
+            {
+                _vertRenderer.Uninitialize();
+                _vertRenderer.SetElement(_textElement);
+            }
+            if (_pathRenderer == null)
+            {
+                _pathRenderer = new WpfPathTextRenderer(_textElement, this);
+            }
+            else
+            {
+                _pathRenderer.Uninitialize();
+                _pathRenderer.SetElement(_textElement);
+            }
+        }
 
         #endregion
 

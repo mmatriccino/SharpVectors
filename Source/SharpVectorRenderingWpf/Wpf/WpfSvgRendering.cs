@@ -56,10 +56,10 @@ namespace SharpVectors.Renderers.Wpf
             base.BeforeRender(renderer);
 
             WpfDrawingContext context = renderer.Context;
-            _drawGroup = new DrawingGroup();
 
             if (context.Count == 0)
             {
+                _drawGroup = new DrawingGroup();
                 context.Push(_drawGroup);
                 context.Root = _drawGroup;
             }
@@ -71,20 +71,37 @@ namespace SharpVectors.Renderers.Wpf
                 {
                     throw new InvalidOperationException("An existing group is expected.");
                 }
-                if (currentGroup == context.Root && !context.IsFragment)
+
+                if (currentGroup == context.Root)
                 {
-                    SvgObject.SetName(_drawGroup, SvgObject.DrawLayer);
-                    if (context.IncludeRuntime)
+                    if (context.IsFragment)
                     {
-                        SvgLink.SetKey(_drawGroup, SvgObject.DrawLayer);
+                        // Do not add extra layer to fragments...
+                        _drawGroup = currentGroup;
+                    }
+                    else
+                    {
+                        _drawGroup = new DrawingGroup();
+                        SvgObject.SetName(_drawGroup, SvgObject.DrawLayer);
+                        if (context.IncludeRuntime)
+                        {
+                            SvgLink.SetKey(_drawGroup, SvgObject.DrawLayer);
+                        }
+
+                        currentGroup.Children.Add(_drawGroup);
+                        context.Push(_drawGroup);
                     }
                 }
-
-                currentGroup.Children.Add(_drawGroup);
-                context.Push(_drawGroup);
+                else
+                {
+                    _drawGroup = new DrawingGroup();
+                    currentGroup.Children.Add(_drawGroup);
+                    context.Push(_drawGroup);
+                }
             }
             else
             {
+                _drawGroup = new DrawingGroup();
                 DrawingGroup currentGroup = context.Peek();
 
                 if (currentGroup == null)
@@ -102,6 +119,13 @@ namespace SharpVectors.Renderers.Wpf
             double y      = Math.Round(svgElm.Y.AnimVal.Value,      4);
             double width  = Math.Round(svgElm.Width.AnimVal.Value,  4);
             double height = Math.Round(svgElm.Height.AnimVal.Value, 4);
+
+            if (width < 0 || height < 0)
+            {
+                // For invalid dimension, prevent the drawing of the children...
+                _isRecursive = true;
+                return;
+            }
 
             Rect elmRect  = new Rect(x, y, width, height);
 
@@ -156,8 +180,8 @@ namespace SharpVectors.Renderers.Wpf
                         // We have already applied the transform, which will translate to the start point...
                         if (transform is TranslateTransform)
                         {
-                            _drawGroup.ClipGeometry = new RectangleGeometry(
-                                new Rect(0, 0, elmRect.Width, elmRect.Height));
+                            //_drawGroup.ClipGeometry = new RectangleGeometry(
+                            //    new Rect(0, 0, elmRect.Width, elmRect.Height));
                         }
                         else
                         {
@@ -196,13 +220,68 @@ namespace SharpVectors.Renderers.Wpf
                     }
                 }
             }
+
+            // Register this drawing with the Drawing-Document...
+            // ...but not the root SVG object, since there is not point for that
+            if (!_isRoot)
+            {
+                this.Rendered(_drawGroup);
+            }
         }
 
         public override void AfterRender(WpfDrawingRenderer renderer)
         {
-            base.AfterRender(renderer);
+            this.OnAfterRender(renderer);
 
+            base.AfterRender(renderer);
+        }
+
+        #endregion
+
+        #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _isRoot      = false;
+            _isRecursive = false;
+
+            var svgRootElm = element as SvgSvgElement;
+            if (svgRootElm != null)
+            {
+                _isRoot = svgRootElm.IsOuterMost;
+            }
+
+            _drawGroup = null;
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private void OnAfterRender(WpfDrawingRenderer renderer)
+        {
             Debug.Assert(_drawGroup != null);
+
+            // Support for Tiny 1.2 viewport-fill property...
+            if (_svgElement.HasAttribute("viewport-fill"))
+            {
+                var viewportFill = _svgElement.GetAttribute("viewport-fill");
+                if (!string.IsNullOrWhiteSpace(viewportFill))
+                {
+                    SvgSvgElement svgElm = (SvgSvgElement)_svgElement;
+
+                    var brush = WpfFill.CreateViewportBrush(svgElm);
+                    if (brush != null)
+                    {
+                        var bounds = new RectangleGeometry(_drawGroup.Bounds);
+                        var drawing = new GeometryDrawing(brush, null, bounds);
+
+                        _drawGroup.Children.Insert(0, drawing);
+                    }
+                }
+            }
 
             WpfDrawingContext context = renderer.Context;
 
@@ -219,7 +298,6 @@ namespace SharpVectors.Renderers.Wpf
             {
                 this.AdjustViewbox();
             }
-
             if (_isRoot || context.IsFragment)
             {
                 return;

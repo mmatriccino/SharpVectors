@@ -17,7 +17,7 @@ namespace SharpVectors.Renderers.Texts
 
         #region Constructors and Destructor
 
-        public WpfHorzTextRenderer(SvgTextElement textElement, WpfTextRendering textRendering)
+        public WpfHorzTextRenderer(SvgTextBaseElement textElement, WpfTextRendering textRendering)
             : base(textElement, textRendering)
         {
         }
@@ -37,7 +37,8 @@ namespace SharpVectors.Renderers.Texts
 
             WpfTextStringFormat stringFormat = GetTextStringFormat(element);
 
-            if (fontFamilyInfo.FontFamilyType == WpfFontFamilyType.Svg)
+            if (fontFamilyInfo.FontFamilyType == WpfFontFamilyType.Svg ||
+                fontFamilyInfo.FontFamilyType == WpfFontFamilyType.Private)
             {
                 WpfTextTuple textInfo = new WpfTextTuple(fontFamilyInfo, emSize, stringFormat, element);
                 this.RenderText(textInfo, ref ctp, text, rotate, placement);
@@ -126,14 +127,34 @@ namespace SharpVectors.Renderers.Texts
 
             var typeFace = new Typeface(fontFamily, fontStyle, fontWeight, fontStretch);
 
+            //bool isRightToLeft = false;
+            //var xmlLang = _textElement.XmlLang;
+            //if (!string.IsNullOrWhiteSpace(xmlLang))
+            //{
+            //    if (string.Equals(xmlLang, "ar", StringComparison.OrdinalIgnoreCase)      // Arabic language
+            //        || string.Equals(xmlLang, "he", StringComparison.OrdinalIgnoreCase))  // Hebrew language
+            //    {
+            //        isRightToLeft = true;
+            //    }
+            //}
+
             if (hasLetterSpacing || hasWordSpacing || textPositions != null)
             {
                 for (int i = 0; i < text.Length; i++)
                 {
                     var nextText = new string(text[i], 1);
-                    FormattedText formattedText = new FormattedText(nextText, 
-                        _context.CultureInfo, stringFormat.Direction, typeFace, emSize, textBrush);
 
+                    FormattedText formattedText = new FormattedText(nextText,
+                        _context.CultureInfo, stringFormat.Direction, typeFace, emSize, textBrush);
+//#if NETCOREAPP30
+//                    FormattedText formattedText = new FormattedText(nextText, 
+//                        _context.CultureInfo, stringFormat.Direction, typeFace, emSize, textBrush);
+//#else
+//                    FormattedText formattedText = new FormattedText(nextText, _context.CultureInfo,
+//                        stringFormat.Direction, typeFace, emSize, textBrush, _context.PixelsPerDip);
+//#endif
+
+//                    formattedText.FlowDirection = isRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
                     formattedText.TextAlignment = stringFormat.Alignment;
                     formattedText.Trimming      = stringFormat.Trimming;
 
@@ -235,12 +256,21 @@ namespace SharpVectors.Renderers.Texts
                 }
             }
             else
-            {   
+            {
                 FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
                     stringFormat.Direction, typeFace, emSize, textBrush);
+//#if NET40
+//                FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
+//                    stringFormat.Direction, typeFace, emSize, textBrush);
+//#else
+//                FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
+//                    stringFormat.Direction, typeFace, emSize, textBrush, _context.PixelsPerDip);
+//#endif
 
                 formattedText.TextAlignment = stringFormat.Alignment;
                 formattedText.Trimming      = stringFormat.Trimming;
+
+//                formattedText.FlowDirection = isRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
 
                 if (textDecors != null && textDecors.Count != 0)
                 {
@@ -288,9 +318,13 @@ namespace SharpVectors.Renderers.Texts
                 //float bboxWidth = (float)formattedText.Width;
                 double bboxWidth = formattedText.WidthIncludingTrailingWhitespace;
                 if (alignment == TextAlignment.Center)
+                {
                     bboxWidth /= 2f;
+                }
                 else if (alignment == TextAlignment.Right)
+                {
                     bboxWidth = 0;
+                }
 
                 //ctp.X += bboxWidth + emSize / 4;
                 ctp.X += bboxWidth;
@@ -371,7 +405,7 @@ namespace SharpVectors.Renderers.Texts
             TextDecorationCollection textDecors = GetTextDecoration(element);
             if (textDecors == null)
             {
-                SvgTextElement textElement = element.ParentNode as SvgTextElement;
+                SvgTextBaseElement textElement = element.ParentNode as SvgTextBaseElement;
 
                 if (textElement != null)
                 {
@@ -455,6 +489,13 @@ namespace SharpVectors.Renderers.Texts
 
                     FormattedText formattedText = new FormattedText(inputText,  _context.CultureInfo, 
                         stringFormat.Direction, typeFace, emSize, textBrush);
+//#if NET40
+//                    FormattedText formattedText = new FormattedText(inputText,  _context.CultureInfo, 
+//                        stringFormat.Direction, typeFace, emSize, textBrush);
+//#else
+//                    FormattedText formattedText = new FormattedText(inputText, _context.CultureInfo,
+//                        stringFormat.Direction, typeFace, emSize, textBrush, _context.PixelsPerDip);
+//#endif
 
                     if (this.IsMeasuring)
                     {
@@ -565,9 +606,16 @@ namespace SharpVectors.Renderers.Texts
                 }
             }
             else
-            {   
+            {
                 FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
-                    stringFormat.Direction, typeFace,  emSize, textBrush);
+                    stringFormat.Direction, typeFace, emSize, textBrush);
+//#if !NET40
+//                FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
+//                    stringFormat.Direction, typeFace, emSize, textBrush, _context.PixelsPerDip);
+//#else
+//                FormattedText formattedText = new FormattedText(text, _context.CultureInfo,
+//                    stringFormat.Direction, typeFace,  emSize, textBrush);
+//#endif
 
                 if (this.IsMeasuring)
                 {
@@ -647,7 +695,7 @@ namespace SharpVectors.Renderers.Texts
             }
         }
 
-        #endregion
+#endregion
 
         #region Private Methods
 
@@ -734,7 +782,7 @@ namespace SharpVectors.Renderers.Texts
 
                     if (textDecors != null && textDecors.Count != 0)
                     {
-                        textBuilder.SetTextDecorations(textDecors);
+                        textBuilder.TextDecorations = textDecors;
                     }
 
                     WpfTextPosition? textPosition = null;
@@ -776,8 +824,8 @@ namespace SharpVectors.Renderers.Texts
                     Geometry textGeometry = textBuilder.Build(element, nextText, textPoint.X, textPoint.Y);
                     if (textGeometry != null && !textGeometry.IsEmpty())
                     {
-                        _drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
-
+                        //_drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
+                        _drawContext.DrawGeometry(textBrush, textPen, textGeometry);
                     }
 
                     //float bboxWidth = (float)formattedText.Width;
@@ -824,7 +872,7 @@ namespace SharpVectors.Renderers.Texts
 
                 if (textDecors != null && textDecors.Count != 0)
                 {
-                    textBuilder.SetTextDecorations(textDecors);
+                    textBuilder.TextDecorations = textDecors;
                 }
 
                 //float xCorrection = 0;
@@ -848,7 +896,8 @@ namespace SharpVectors.Renderers.Texts
                 Geometry textGeometry = textBuilder.Build(element, text, textPoint.X, textPoint.Y);
                 if (textGeometry != null && !textGeometry.IsEmpty())
                 {
-                    _drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
+//                    _drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
+                    _drawContext.DrawGeometry(textBrush, textPen, textGeometry);
                 }
 
                 //float bboxWidth = (float)formattedText.Width;
@@ -910,7 +959,7 @@ namespace SharpVectors.Renderers.Texts
             TextDecorationCollection textDecors = GetTextDecoration(element);
             if (textDecors == null)
             {
-                SvgTextElement textElement = element.ParentNode as SvgTextElement;
+                SvgTextBaseElement textElement = element.ParentNode as SvgTextBaseElement;
 
                 if (textElement != null)
                 {
@@ -1005,7 +1054,7 @@ namespace SharpVectors.Renderers.Texts
 
                     if (textDecors != null && textDecors.Count != 0)
                     {
-                        textBuilder.SetTextDecorations(textDecors);
+                        textBuilder.TextDecorations = textDecors;
                     }
 
                     WpfTextPosition? textPosition = null;
@@ -1047,10 +1096,8 @@ namespace SharpVectors.Renderers.Texts
                     Geometry textGeometry = textBuilder.Build(element, inputText, textPoint.X, textPoint.Y);
                     if (textGeometry != null && !textGeometry.IsEmpty())
                     {
-                        _drawContext.DrawGeometry(textBrush, textPen,
-                            ExtractTextPathGeometry(textGeometry));
-
-                        this.IsTextPath = true;
+//                        _drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
+                        _drawContext.DrawGeometry(textBrush, textPen, textGeometry);
                     }
 
                     //float bboxWidth = (float)formattedText.Width;
@@ -1114,7 +1161,7 @@ namespace SharpVectors.Renderers.Texts
 
                 if (textDecors != null && textDecors.Count != 0)
                 {
-                    textBuilder.SetTextDecorations(textDecors);
+                    textBuilder.TextDecorations = textDecors;
                 }
 
                 //float xCorrection = 0;
@@ -1138,12 +1185,12 @@ namespace SharpVectors.Renderers.Texts
                 Geometry textGeometry = textBuilder.Build(element, text, textPoint.X, textPoint.Y);
                 if (textGeometry != null && !textGeometry.IsEmpty())
                 {
-                    _drawContext.DrawGeometry(textBrush, textPen,
-                        ExtractTextPathGeometry(textGeometry));
+//                    _drawContext.DrawGeometry(textBrush, textPen, ExtractTextPathGeometry(textGeometry));
+                    _drawContext.DrawGeometry(textBrush, textPen, textGeometry);
                 }
 
                 //float bboxWidth = (float)formattedText.Width;
-//                double bboxWidth = textGeometry.Bounds.Width;
+                //                double bboxWidth = textGeometry.Bounds.Width;
                 double bboxWidth = textBuilder.Width;
 
                 if (alignment == TextAlignment.Center)

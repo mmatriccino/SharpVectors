@@ -14,7 +14,7 @@ namespace SharpVectors.Dom.Svg
     {
         #region Private static fields
 
-        private static Regex isImportant = new Regex(@"!\s*important$");
+        private static readonly Regex _isImportant = new Regex(@"!\s*important$");
 
         #endregion
 
@@ -56,7 +56,7 @@ namespace SharpVectors.Dom.Svg
                 string attValue = GetAttribute(name, string.Empty).Trim();
                 if (!string.IsNullOrWhiteSpace(attValue))
                 {
-                    if (isImportant.IsMatch(attValue))
+                    if (_isImportant.IsMatch(attValue))
                     {
                         result = null;
                     }
@@ -87,10 +87,11 @@ namespace SharpVectors.Dom.Svg
 
         public string GetPropertyValue(string name1, string name2)
         {
-            string cssString = GetComputedStyle(string.Empty).GetPropertyValue(name1);
-            if (cssString == null)
+            var cssDeclaration = this.GetComputedStyle(string.Empty);
+            string cssString = cssDeclaration.GetPropertyValue(name1);
+            if (string.IsNullOrWhiteSpace(cssString))
             {
-                cssString = GetComputedStyle(string.Empty).GetPropertyValue(name2);
+                cssString = cssDeclaration.GetPropertyValue(name2);
             }
 
             return cssString;
@@ -121,6 +122,11 @@ namespace SharpVectors.Dom.Svg
                             CssStyleSheetType.NonCssPresentationalHints, string.Empty);
                     }
                 }
+
+                //if (!string.IsNullOrWhiteSpace(pseudoElt))
+                //{
+                //    return csd;
+                //}
 
                 _cachedCSD = csd;
             }

@@ -6,6 +6,7 @@ using System.Windows.Media;
 
 using SharpVectors.Dom.Svg;
 using SharpVectors.Runtime;
+using SharpVectors.Renderers.Utils;
 
 namespace SharpVectors.Renderers.Wpf
 {
@@ -18,6 +19,7 @@ namespace SharpVectors.Renderers.Wpf
         private SvgMarkerElement _markerElement;
         private SvgStyleableElement _hostElement;
 
+        private PathGeometry _hostGeometry;
         private PathFigureCollection _pathFigures;
 
         #endregion
@@ -159,9 +161,10 @@ namespace SharpVectors.Renderers.Wpf
             ISvgAnimatedEnumeration markerUnits = _markerElement.MarkerUnits;
             if (markerUnits.AnimVal.Equals((ushort)SvgMarkerUnit.StrokeWidth))
             {
+                var comparer = StringComparison.OrdinalIgnoreCase;
                 string overflowAttr = _markerElement.GetAttribute("overflow");
                 if (string.IsNullOrWhiteSpace(overflowAttr) 
-                    || overflowAttr.Equals("scroll") || overflowAttr.Equals("hidden"))
+                    || overflowAttr.Equals("scroll", comparer) || overflowAttr.Equals("hidden", comparer))
                 {
                     Geometry markerClip = this.ClipGeometry;
                     if (markerClip == null || markerClip.IsEmpty())
@@ -172,10 +175,64 @@ namespace SharpVectors.Renderers.Wpf
                             _drawGroup.ClipGeometry = new RectangleGeometry(
                                 new Rect(clipRect.X, clipRect.Y, clipRect.Width, clipRect.Height));
                         }
-                        else
+                        else if (_markerElement.IsSizeDefined)
                         {
                             _drawGroup.ClipGeometry = new RectangleGeometry(new Rect(0, 0, 
                                 _markerElement.MarkerWidth.AnimVal.Value, _markerElement.MarkerHeight.AnimVal.Value));
+                        }
+                        else if (_hostElement != null)
+                        {
+                            // Special cases for zero-length 'path' and 'line' segments.
+                            var isLineSegment = false;
+                            if (_hostGeometry != null)
+                            {
+                                var bounds = _hostGeometry.Bounds;
+                                if (string.Equals(_hostElement.LocalName, "line", StringComparison.Ordinal))
+                                {
+                                    isLineSegment = true;
+                                }
+                                else if (string.Equals(_hostElement.LocalName, "rect", StringComparison.Ordinal))
+                                {
+                                    isLineSegment = bounds.Width.Equals(0) || bounds.Height.Equals(0);
+                                }
+                                else if (string.Equals(_hostElement.LocalName, "path", StringComparison.Ordinal))
+                                {
+                                    isLineSegment = bounds.Width.Equals(0) || bounds.Height.Equals(0);
+                                }
+                            }
+                            else
+                            {
+                                if (string.Equals(_hostElement.LocalName, "line", StringComparison.Ordinal))
+                                {
+                                    isLineSegment = true;
+                                }
+                            }
+                            if (isLineSegment)
+                            {
+                                bool isZeroWidthLine = false;
+                                if (_pathFigures != null)
+                                {
+                                    if (_pathFigures.Count == 0)
+                                    {
+                                        isZeroWidthLine = true;
+                                    }
+                                    else
+                                    {
+                                        var pathWidth = 0.0d;
+                                        foreach (PathFigure pathFigure in _pathFigures)
+                                        {
+                                            pathWidth += WpfConvert.GetPathFigureLength(pathFigure); 
+                                        }
+                                        isZeroWidthLine = pathWidth.Equals(0.0d);
+                                    }
+                                }
+
+                                if (isZeroWidthLine)
+                                {
+                                    _drawGroup.ClipGeometry = new RectangleGeometry(new Rect(0, 0,
+                                        _markerElement.MarkerWidth.AnimVal.Value, _markerElement.MarkerHeight.AnimVal.Value));
+                                }
+                            }
                         }
                     }
                 }
@@ -184,41 +241,6 @@ namespace SharpVectors.Renderers.Wpf
             context.Pop();
 
             base.AfterRender(renderer);
-        }
-
-        public static Matrix GetTransformMatrix(SvgElement element)
-        {
-            ISvgTransformable transElm = element as ISvgTransformable;
-            if (transElm == null)
-                return Matrix.Identity;
-
-            SvgTransformList svgTList = (SvgTransformList)transElm.Transform.AnimVal;
-            SvgTransform svgTransform = (SvgTransform)svgTList.Consolidate();
-            SvgMatrix svgMatrix       = ((SvgTransformList)transElm.Transform.AnimVal).TotalMatrix;
-
-            return new Matrix(svgMatrix.A, svgMatrix.B, svgMatrix.C,
-                svgMatrix.D, svgMatrix.E, svgMatrix.F);
-        }
-
-        public static Matrix GetTransformMatrix(SvgElement element, TransformGroup transform)
-        {
-            ISvgTransformable transElm = element as ISvgTransformable;
-            if (transElm == null)
-                return Matrix.Identity;
-
-            SvgTransformList svgTList = (SvgTransformList)transElm.Transform.AnimVal;
-            SvgTransform svgTransform = (SvgTransform)svgTList.Consolidate();
-            SvgMatrix svgMatrix       = ((SvgTransformList)transElm.Transform.AnimVal).TotalMatrix;
-
-            var matrix = new Matrix(svgMatrix.A, svgMatrix.B, svgMatrix.C,
-                svgMatrix.D, svgMatrix.E, svgMatrix.F);
-
-            if (!matrix.IsIdentity)
-            {
-                transform.Children.Add(new MatrixTransform(matrix));
-            }
-
-            return matrix;
         }
 
         public void RenderMarker(WpfDrawingRenderer renderer, WpfDrawingContext gr,
@@ -235,6 +257,17 @@ namespace SharpVectors.Renderers.Wpf
                     if (pathGeometry != null)
                     {
                         _pathFigures = pathGeometry.Figures;
+
+                        _hostGeometry = pathGeometry;
+                    }
+                    else
+                    {
+                        var hostGeometry = paintContext.Tag as Geometry;
+                        if (hostGeometry != null)
+                        {
+                            _hostGeometry = hostGeometry.GetFlattenedPathGeometry();
+                            _pathFigures  = _hostGeometry.Figures;
+                        }
                     }
                 }
             }
@@ -277,11 +310,7 @@ namespace SharpVectors.Renderers.Wpf
             {
                 SvgPointF point = vertexPositions[i];
 
-                //GdiGraphicsContainer gc = gr.BeginContainer();
-
                 this.BeforeRender(renderer);
-
-                //Matrix matrix = Matrix.Identity;
 
                 Matrix matrix = GetTransformMatrix(_svgElement, transform);
 
@@ -367,7 +396,7 @@ namespace SharpVectors.Renderers.Wpf
 
                 // 'viewBox' and 'preserveAspectRatio' attributes
                 // viewBox -> viewport(0, 0, markerWidth, markerHeight)
-                SvgPreserveAspectRatio spar = (SvgPreserveAspectRatio)_markerElement.PreserveAspectRatio.AnimVal;
+                var spar = (SvgPreserveAspectRatio)_markerElement.PreserveAspectRatio.AnimVal;
                 double[] translateAndScale = spar.FitToViewBox((SvgRect)_markerElement.ViewBox.AnimVal,
                     new SvgRect(0, 0, _markerElement.MarkerWidth.AnimVal.Value, _markerElement.MarkerHeight.AnimVal.Value));
 
@@ -421,14 +450,66 @@ namespace SharpVectors.Renderers.Wpf
 
                 this.Render(renderer);
 
-                //Clip(gr);
-
                 renderer.RenderChildren(_markerElement);
-
-                //gr.EndContainer(gc);
 
                 this.AfterRender(renderer);
             }
+        }
+
+        #endregion
+
+        #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _matrix        = Matrix.Identity;
+            _drawGroup     = null;
+            _hostElement   = null;
+            _pathFigures   = null;
+            _hostGeometry  = null;
+
+            _markerElement = element as SvgMarkerElement;
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private static Matrix GetTransformMatrix(SvgElement element)
+        {
+            ISvgTransformable transElm = element as ISvgTransformable;
+            if (transElm == null)
+                return Matrix.Identity;
+
+            SvgTransformList svgTList = (SvgTransformList)transElm.Transform.AnimVal;
+            SvgTransform svgTransform = (SvgTransform)svgTList.Consolidate();
+            SvgMatrix svgMatrix       = ((SvgTransformList)transElm.Transform.AnimVal).TotalMatrix;
+
+            return new Matrix(svgMatrix.A, svgMatrix.B, svgMatrix.C,
+                svgMatrix.D, svgMatrix.E, svgMatrix.F);
+        }
+
+        private static Matrix GetTransformMatrix(SvgElement element, TransformGroup transform)
+        {
+            ISvgTransformable transElm = element as ISvgTransformable;
+            if (transElm == null)
+                return Matrix.Identity;
+
+            SvgTransformList svgTList = (SvgTransformList)transElm.Transform.AnimVal;
+            SvgTransform svgTransform = (SvgTransform)svgTList.Consolidate();
+            SvgMatrix svgMatrix       = ((SvgTransformList)transElm.Transform.AnimVal).TotalMatrix;
+
+            var matrix = new Matrix(svgMatrix.A, svgMatrix.B, svgMatrix.C,
+                svgMatrix.D, svgMatrix.E, svgMatrix.F);
+
+            if (!matrix.IsIdentity)
+            {
+                transform.Children.Add(new MatrixTransform(matrix));
+            }
+
+            return matrix;
         }
 
         private double GetAngleAt(int index, double angle, SvgMarkerPosition position, ISharpMarkerHost markerHost)

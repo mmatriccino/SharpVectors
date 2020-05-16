@@ -30,6 +30,10 @@ namespace WpfW3cSvgTestSuite
         private static extern void SHParseDisplayName([MarshalAs(UnmanagedType.LPWStr)] string name,
             IntPtr bindingContext, [Out] out IntPtr pidl, uint sfgaoIn, [Out] out uint psfgaoOut);
 
+        [DllImport("Shlwapi.dll", EntryPoint = "PathIsDirectoryEmpty")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsDirectoryEmpty([MarshalAs(UnmanagedType.LPStr)]string directory);
+
         #endregion
 
         #region Public Events
@@ -42,14 +46,14 @@ namespace WpfW3cSvgTestSuite
 
         private const string ParentSymbol = "..\\";
         private const string SharpVectors = "SharpVectors";
-
-        [DllImport("Shlwapi.dll", EntryPoint = "PathIsDirectoryEmpty")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool IsDirectoryEmpty([MarshalAs(UnmanagedType.LPStr)]string directory);
+        private const string FontsPrefix  = "Fonts";
 
         private bool _hidePathsRoot;
         private string _webSuitePath;
         private string _localSuitePath;
+
+        private string _webFontsPath;
+        private string _localFontsPath;
 
         private string _selectedValuePath;
 
@@ -92,6 +96,16 @@ namespace WpfW3cSvgTestSuite
             {
                 Directory.CreateDirectory(_localSuitePath);
             }
+
+            _webFontsPath   = SvgTestSuite.WebDirBase + FontsPrefix + SvgTestSuite.FileExtZip;
+            _localFontsPath = Path.GetFullPath(Path.Combine(SvgTestSuite.LocalDirBase, FontsPrefix));
+
+            if (!Directory.Exists(_localFontsPath))
+            {
+                Directory.CreateDirectory(_localFontsPath);
+            }
+
+            _wpfSettings.AddFontLocation(_localFontsPath);
         }
 
         public OptionSettings(OptionSettings source)
@@ -138,6 +152,26 @@ namespace WpfW3cSvgTestSuite
             }
             set {
                 _localSuitePath = value;
+            }
+        }
+
+        public string WebFontsPath
+        {
+            get {
+                return _webFontsPath;
+            }
+            set {
+                _webFontsPath = value;
+            }
+        }
+
+        public string LocalFontsPath
+        {
+            get {
+                return _localFontsPath;
+            }
+            set {
+                _localFontsPath = value;
             }
         }
 
@@ -261,13 +295,13 @@ namespace WpfW3cSvgTestSuite
             {
                 return true;
             }
-            string currentPath = string.Copy(currentSuitePath);
+            string currentPath = new string(currentSuitePath.ToCharArray());
             if (!currentSuitePath.EndsWith("\\", StringComparison.OrdinalIgnoreCase))
             {
                 currentPath = currentSuitePath + "\\";
             }
 
-            string suitePath = string.Copy(_localSuitePath);
+            string suitePath = new string(_localSuitePath.ToCharArray());
             if (!_localSuitePath.EndsWith("\\", StringComparison.OrdinalIgnoreCase))
             {
                 suitePath = _localSuitePath + "\\";
@@ -549,11 +583,11 @@ namespace WpfW3cSvgTestSuite
             }
             if (_webSuitePath != null)
             {
-                clonedSettings._webSuitePath = string.Copy(_webSuitePath);
+                clonedSettings._webSuitePath = new string(_webSuitePath.ToCharArray());
             }
             if (_localSuitePath != null)
             {
-                clonedSettings._localSuitePath = string.Copy(_localSuitePath);
+                clonedSettings._localSuitePath = new string(_localSuitePath.ToCharArray());
             }
             if (_testSuites != null)
             {

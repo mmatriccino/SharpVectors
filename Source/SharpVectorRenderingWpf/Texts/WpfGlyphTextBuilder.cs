@@ -21,8 +21,7 @@ namespace SharpVectors.Renderers.Texts
     {
         #region Private Fields
 
-        private const string DefaultFontFamily = "Arial";
-        private const double EmMultiplier      = 100.0;
+        private const double EmMultiplier = 100.0;
 
         private ushort[] _glyphIndices;
         private double[] _advanceWidths;
@@ -47,7 +46,7 @@ namespace SharpVectors.Renderers.Texts
         #region Constructors and Destructor
 
         public WpfGlyphTextBuilder(CultureInfo culture, double fontSize)
-            : this(culture, DefaultFontFamily, fontSize)
+            : this(WpfDrawingSettings.DefaultFontFamily, culture, fontSize)
         {
         }
 
@@ -55,6 +54,28 @@ namespace SharpVectors.Renderers.Texts
             : base(culture, familyInfo.Name, fontSize, null)
         {
             _typeface = new Typeface(familyInfo.Family, familyInfo.Style, familyInfo.Weight, familyInfo.Stretch);
+
+            if (!_typeface.TryGetGlyphTypeface(out _glyphTypeface))
+            {
+                throw new ArgumentException();
+            }
+        }
+
+        public WpfGlyphTextBuilder(FontFamily fontFamily, CultureInfo culture, double fontSize)
+            : this(fontFamily, FontStyles.Normal, FontWeights.Normal, culture, fontSize)
+        {
+        }
+
+        public WpfGlyphTextBuilder(FontFamily fontFamily, FontStyle fontStyle, FontWeight fontWeight, 
+            CultureInfo culture, double fontSize)
+            : base(culture, fontFamily.Source, fontSize, null)
+        {
+            if (fontFamily == null)
+            {
+                fontFamily = WpfDrawingSettings.DefaultFontFamily;
+            }
+
+            _typeface = new Typeface(fontFamily, fontStyle, fontWeight, FontStretches.Normal);
 
             if (!_typeface.TryGetGlyphTypeface(out _glyphTypeface))
             {
@@ -179,6 +200,38 @@ namespace SharpVectors.Renderers.Texts
         }
 
         /// <summary>
+        /// Gets a value that indicates the distance of the overline from the baseline for the typeface.
+        /// </summary>
+        /// <value>A <see cref="double"/> that indicates the overline position, measured from the baseline 
+        /// and expressed as a fraction of the font em size.</value>
+        public override double OverlinePosition
+        {
+            get {
+                if (_typeface != null)
+                {
+                    //return _typeface.OverlinePosition;
+                }
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Gets a value that indicates the thickness of the overline relative to the font em size for the typeface.
+        /// </summary>
+        /// <value>A <see cref="double"/> that indicates the overline thickness, expressed as a fraction 
+        /// of the font em size.</value>
+        public override double OverlineThickness
+        {
+            get {
+                if (_typeface != null)
+                {
+                    return _typeface.UnderlineThickness; // Overline and underline: should be the same!
+                }
+                return 0;
+            }
+        }
+
+        /// <summary>
         /// Gets the distance from the baseline to the top of an English lowercase letter for a typeface. 
         /// The distance excludes ascenders.
         /// </summary>
@@ -208,6 +261,13 @@ namespace SharpVectors.Renderers.Texts
         {
             get {
                 return _glyphTypeface.Baseline;
+            }
+        }
+
+        public override double Baseline
+        {
+            get {
+                return _glyphTypeface.Baseline * this.FontSize;
             }
         }
 
@@ -260,39 +320,6 @@ namespace SharpVectors.Renderers.Texts
 
         #region Public Methods
 
-        public override PathGeometry Build(SvgTextContentElement element, string text, double x, double y)
-        {
-            ComputeMeasurement(text, x, y);
-
-            _textWidth = 0;
-
-            if (_glyphRun == null)
-            {
-                return new PathGeometry();
-            }
-
-            // Approximate the width of the text...
-            Rect designRect = _glyphRun.ComputeAlignmentBox();
-            designRect.Offset(_glyphRunOrigin.X, _glyphRunOrigin.Y);
-
-            _textWidth = Math.Max(0, designRect.Right);
-
-            PathGeometry pathGeometry = null;
-
-            var geometry = _glyphRun.BuildGeometry();
-            if (geometry is PathGeometry)
-            {
-                pathGeometry = (PathGeometry)geometry;
-            }
-            else
-            {
-                pathGeometry = new PathGeometry();
-                pathGeometry.AddGeometry(geometry);
-            }
-
-            return pathGeometry;
-        }
-
         public override IList<Rect> MeasureChars(SvgTextContentElement element, string text, bool canBeWhitespace = true)
         {
             //TODO: This is not an efficient implementation
@@ -315,13 +342,151 @@ namespace SharpVectors.Renderers.Texts
             ComputeMeasurement(text, 0, 0);
 
             if (_glyphRun == null)
-                return new Size();
+            {
+                return new Size(0, 0);
+            }
 
             Rect designRect = _glyphRun.ComputeAlignmentBox();
 
-            designRect.Offset(_glyphRunOrigin.X, _glyphRunOrigin.Y);
+            //designRect.Offset(_glyphRunOrigin.X, _glyphRunOrigin.Y);
+
+            _textWidth = Math.Max(0, designRect.Right);
 
             return new Size(Math.Max(0, designRect.Right), Math.Max(0, designRect.Bottom));
+        }
+
+        public override Geometry Build(SvgTextContentElement element, string text, double x, double y)
+        {
+//            bool isRightToLeft = false;
+            var xmlLang = element.XmlLang;
+            if (!string.IsNullOrWhiteSpace(xmlLang))
+            {
+                if (string.Equals(xmlLang, "ar", StringComparison.OrdinalIgnoreCase)      // Arabic language
+                    || string.Equals(xmlLang, "he", StringComparison.OrdinalIgnoreCase))  // Hebrew language
+                {
+//                    isRightToLeft = true;
+
+                    //                    this.BidiLevel = 1;
+
+                    if (text.Length > 0)
+                    {
+                        char[] charArray = text.ToCharArray();
+                        Array.Reverse(charArray);
+                        text = new string(charArray);
+                    }
+                }
+            }
+
+            var alignment = this.TextAlignment;
+            if (alignment != TextAlignment.Left)
+            {
+                var textSize = this.MeasureText(element, text, true);
+                var textWidth = Math.Max(textSize.Width, this.Width);
+                if (alignment == TextAlignment.Center)
+                {
+                    x -= textWidth / 2;
+                }
+                else
+                {
+                    x -= textWidth;
+                }
+            }
+            //else if (isRightToLeft)
+            //{
+            //    var textSize  = this.MeasureText(element, text, true);
+            //    var textWidth = Math.Max(textSize.Width, this.Width);
+
+            //    x -= textWidth;
+            //}
+
+            ComputeMeasurement(text, x, y + this.Baseline);
+
+            _textWidth = 0;
+
+            if (_glyphRun == null)
+            {
+                return new GeometryGroup();
+            }
+
+            // Approximate the width of the text...
+            Rect designRect = _glyphRun.ComputeAlignmentBox();
+            //designRect.Offset(_glyphRunOrigin.X, _glyphRunOrigin.Y);
+
+            _textWidth = Math.Max(0, designRect.Right);
+
+            var geometry = _glyphRun.BuildGeometry();
+            if (geometry == null)
+            {
+                return geometry;
+            }
+
+            if (_textDecorations == null || _textDecorations.Count == 0)
+            {
+                if (_buildPathGeometry)
+                {
+                    PathGeometry pathGeometry = geometry as PathGeometry;
+                    if (pathGeometry == null)
+                    {
+                        pathGeometry = new PathGeometry();
+                        pathGeometry.AddGeometry(geometry);
+                    }
+                    return pathGeometry;
+                }
+                return geometry;
+            }
+
+            var baseline = y + this.Baseline;
+
+            GeometryGroup geomGroup = geometry as GeometryGroup;
+            if (geomGroup == null)
+            {
+                geomGroup = new GeometryGroup();
+                geomGroup.Children.Add(geometry);
+            }
+
+            foreach (var textDeDecoration in _textDecorations)
+            {
+                double decorationPos = 0;
+                double decorationThickness = 0;
+
+                if (textDeDecoration.Location == TextDecorationLocation.Strikethrough)
+                {
+                    decorationPos = baseline - (this.StrikethroughPosition * _fontSize);
+                    decorationThickness = this.StrikethroughThickness * _fontSize;
+                }
+                else if (textDeDecoration.Location == TextDecorationLocation.Underline)
+                {
+                    decorationPos = baseline - (this.UnderlinePosition * _fontSize);
+                    decorationThickness = this.UnderlineThickness * _fontSize;
+                }
+                else if (textDeDecoration.Location == TextDecorationLocation.OverLine)
+                {
+                    decorationPos = baseline - _fontSize;
+                    decorationThickness = this.OverlineThickness * _fontSize;
+                }
+                Rect bounds = new Rect(geomGroup.Bounds.Left, decorationPos, geomGroup.Bounds.Width, decorationThickness + 0.5);
+
+                var rectGeom = new RectangleGeometry(bounds);
+                if (_buildPathGeometry)
+                {
+                    PathGeometry pathGeometry = new PathGeometry();
+                    pathGeometry.AddGeometry(rectGeom);
+                    geomGroup.Children.Add(pathGeometry);
+                }
+                else
+                {
+                    geomGroup.Children.Add(rectGeom);
+                }
+            }
+
+            if (_buildPathGeometry)
+            {
+                PathGeometry pathGeometry = new PathGeometry();
+                pathGeometry.AddGeometry(geomGroup);
+
+                return pathGeometry;
+            }
+            return geomGroup;
         }
 
         #endregion
@@ -352,17 +517,17 @@ namespace SharpVectors.Renderers.Texts
             return new GlyphRun(
                 _glyphTypeface,               // GlyphTypeface
                 _bidiLevel,                   // Bidi level
-                _isSideways,                    // sideways flag
-                _fontSize,           // rendering em size in MIL units
+                _isSideways,                  // sideways flag
+                _fontSize,                    // rendering em size in MIL units
                 _glyphIndices,                // glyph indices
-                origin,                      // origin of glyph-drawing space
+                origin,                       // origin of glyph-drawing space
                 _advanceWidths,               // glyph advances
                 _glyphOffsets,                // glyph offsets
                 _unicodeString.ToCharArray(), // unicode characters
                 _deviceFontName,              // device font
                 _clusterMap,                  // cluster map
-                null,                  // caret stops
-                language                     // language
+                null,                         // caret stops
+                language                      // language
             );
         }
 
@@ -387,12 +552,12 @@ namespace SharpVectors.Renderers.Texts
             Rect alignmentRect = new Rect();
             if (haveOriginX && haveOriginY && leftToRight)
             {
-                _glyphRun = CreateGlyphRun(new Point(OriginX, OriginY), Language);
+                _glyphRun = CreateGlyphRun(new Point(OriginX, OriginY), this.Language);
                 measurementGlyphRunOriginValid = true;
             }
             else
             {
-                _glyphRun = CreateGlyphRun(new Point(), Language);
+                _glyphRun = CreateGlyphRun(new Point(), this.Language);
                 // compute alignment box for origins
                 alignmentRect = _glyphRun.ComputeAlignmentBox();
             }
@@ -408,9 +573,7 @@ namespace SharpVectors.Renderers.Texts
                 _glyphRunOrigin.Y = -alignmentRect.Y;
 
             if (!measurementGlyphRunOriginValid)
-            {
-                _glyphRun = CreateGlyphRun(_glyphRunOrigin, Language);
-            }
+                _glyphRun = CreateGlyphRun(_glyphRunOrigin, this.Language);
         }
 
         ///<SecurityNote>

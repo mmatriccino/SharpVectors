@@ -23,7 +23,7 @@ namespace SharpVectors.Renderers.Wpf
 
         private WpfDrawingRenderer _renderer;
 
-        private IDictionary<ISvgElement, WpfRenderingBase> _rendererMap;
+        private IDictionary<string, WpfRenderingBase> _rendererMap;
 
         // A simple way to prevent use element circular references.
         private ISet<string> _useIdElements;
@@ -40,7 +40,7 @@ namespace SharpVectors.Renderers.Wpf
             _currentLang     = cultureInfo.TwoLetterISOLanguageName;
             _currentLangName = cultureInfo.Name;
             _renderer        = renderer;
-            _rendererMap     = new Dictionary<ISvgElement, WpfRenderingBase>();
+            _rendererMap     = new Dictionary<string, WpfRenderingBase>(StringComparer.OrdinalIgnoreCase);
             _useElements     = new HashSet<int>();
             _useIdElements   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
        }
@@ -86,6 +86,16 @@ namespace SharpVectors.Renderers.Wpf
             {
                 RenderElement(svgElement);
             }
+        }
+
+        public void RenderAs(SvgElement svgElement)
+        {
+            if (svgElement == null)
+            {
+                return;
+            }
+
+            RenderElementAs(svgElement);
         }
 
         public void RenderChildren(ISvgElement svgElement)
@@ -190,12 +200,21 @@ namespace SharpVectors.Renderers.Wpf
 
             if (!renderingNode.NeedRender(_renderer))
             {
-                renderingNode.Dispose();
-                renderingNode = null;
+                //renderingNode.Dispose();
+                //renderingNode = null;
                 return;
             }
 
-            _rendererMap[svgElement] = renderingNode;
+            SvgElement currentElement = (SvgElement)svgElement;
+
+            if (_rendererMap.ContainsKey(currentElement.UniqueId))
+            {
+                // Might be circular rendering...
+                System.Diagnostics.Debug.WriteLine("Circular Object: " + currentElement.LocalName);
+                return;
+            }
+
+            _rendererMap[currentElement.UniqueId] = renderingNode;
             renderingNode.BeforeRender(_renderer);
 
             renderingNode.Render(_renderer);
@@ -205,13 +224,47 @@ namespace SharpVectors.Renderers.Wpf
                 RenderChildren(svgElement);
             }
 
-            renderingNode = _rendererMap[svgElement];
+            renderingNode = _rendererMap[currentElement.UniqueId];
             renderingNode.AfterRender(_renderer);
 
-            _rendererMap.Remove(svgElement);
+            _rendererMap.Remove(currentElement.UniqueId);
 
-            renderingNode.Dispose();
-            renderingNode = null;
+            //renderingNode.Dispose();
+            //renderingNode = null;
+        }
+
+        private void RenderElementAs(SvgElement svgElement)
+        {
+            WpfRenderingBase renderingNode = WpfRendering.Create(svgElement);
+            if (renderingNode == null)
+            {
+                return;
+            }
+
+            if (!renderingNode.NeedRender(_renderer))
+            {
+                //renderingNode.Dispose();
+                //renderingNode = null;
+                return;
+            }
+
+            _rendererMap[svgElement.UniqueId] = renderingNode;
+            renderingNode.BeforeRender(_renderer);
+
+            renderingNode.Render(_renderer);
+
+            if (!renderingNode.IsRecursive && svgElement.HasChildNodes)
+            {
+                RenderChildren(svgElement);
+            }
+
+            renderingNode = _rendererMap[svgElement.UniqueId];
+            renderingNode.AfterRender(_renderer);
+
+            _rendererMap.Remove(svgElement.UniqueId);
+
+            //renderingNode.Dispose();
+            //renderingNode = null;
         }
 
         private void RenderUseElement(ISvgElement svgElement)
@@ -233,16 +286,22 @@ namespace SharpVectors.Renderers.Wpf
                 this.EndUseElement(useElement, hashCode);
                 return;
             }
+            XmlElement refElParent = refEl.ParentNode as XmlElement;
+            var siblingNode = refEl.PreviousSibling;
+            if (siblingNode != null && siblingNode.NodeType == XmlNodeType.Whitespace)
+            {
+                siblingNode = siblingNode.PreviousSibling;
+            }
 
             // For the external node, the documents are different, and we may not be
             // able to insert this node, so we first import it...
             if (useElement.OwnerDocument != refEl.OwnerDocument)
             {
-                XmlElement importedNode = useElement.OwnerDocument.ImportNode(refEl, true) as XmlElement;
+                var importedNode = useElement.OwnerDocument.ImportNode(refEl, true) as XmlElement;
 
                 if (importedNode != null)
                 {
-                    SvgElement importedSvgElement = importedNode as SvgElement;
+                    var importedSvgElement = importedNode as SvgElement;
                     if (importedSvgElement != null)
                     {
                         importedSvgElement.Imported       = true;
@@ -259,17 +318,64 @@ namespace SharpVectors.Renderers.Wpf
                 refEl = (XmlElement)refEl.CloneNode(true);
             }
             // Reset any ID on the cloned/copied element to avoid duplication of IDs.
- //           refEl.SetAttribute("id", "");
+            //           refEl.SetAttribute("id", "");
 
             useElement.OwnerDocument.Static = true;
             useElement.CopyToReferencedElement(refEl);
+
+            XmlElement refSiblingEl = null;
+            string useId = null;
+
+            // Compensate for the parent's class and sibling css loss from cloning...
+            if (refElParent != null && refElParent.HasAttribute("class"))
+            {
+                var parentClass = refElParent.GetAttribute("class");
+                if (!string.IsNullOrWhiteSpace(parentClass))
+                {
+                    var parentEl = document.CreateElement(refElParent.LocalName);
+                    parentEl.SetAttribute("class", parentClass);
+
+                    parentEl.AppendChild(refEl);
+
+                    refEl = parentEl;
+                }
+            }
+            else if (refElParent != null && siblingNode != null)
+            {
+                var siblingEl = siblingNode as XmlElement;
+                if (siblingEl != null && siblingEl.HasAttribute("class"))
+                {
+                    var siblingClass = siblingEl.GetAttribute("class");
+                    if (!string.IsNullOrWhiteSpace(siblingClass))
+                    {
+                        refSiblingEl = (XmlElement)siblingEl.CloneNode(true);
+
+                        useElement.AppendChild(refSiblingEl);
+                    }
+                }
+            }
+            else
+            {
+                //useId = useElement.Id;
+                //useElement.SetAttribute("id", "");
+            }
+
             useElement.AppendChild(refEl);
 
             // Now, render the use element...
             this.RenderElement(svgElement);
 
+            if (refSiblingEl != null)
+            {
+                useElement.RemoveChild(refSiblingEl);
+            }
             useElement.RemoveChild(refEl);
             useElement.RestoreReferencedElement(refEl);
+
+            if (useId != null)
+            {
+                useElement.SetAttribute("id", useId);
+            }
 
             this.EndUseElement(useElement, hashCode);
         }

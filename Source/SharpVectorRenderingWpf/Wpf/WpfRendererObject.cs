@@ -11,6 +11,13 @@ namespace SharpVectors.Renderers.Wpf
 {
     public abstract class WpfRendererObject : DependencyObject, IDisposable
     {
+        #region Private Fields
+
+        private static readonly Regex _regExCaps = new Regex(@"(?<=[A-Z])(?=[A-Z][a-z]) |
+                 (?<=[^A-Z])(?=[A-Z]) | (?<=[A-Za-z])(?=[^A-Za-z])", RegexOptions.IgnorePatternWhitespace);
+
+        #endregion
+
         #region Protected Fields
 
         protected bool _isDisposed; // To detect redundant calls
@@ -27,8 +34,8 @@ namespace SharpVectors.Renderers.Wpf
 
         protected WpfRendererObject()
         {
-            _flattenClosedPath = false;
-            _flattenTolerance = 0.0022;
+            _flattenClosedPath    = false;
+            _flattenTolerance     = 0.0022;
             _flattenToleranceType = ToleranceType.Relative;
         }
 
@@ -79,6 +86,18 @@ namespace SharpVectors.Renderers.Wpf
             return (transform == null || transform.Value.IsIdentity);
         }
 
+        public static bool SplitByCaps(string input, out string output)
+        {
+            output = input;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return false;
+            }
+            output = _regExCaps.Replace(input, " ");
+
+            return output.Length > input.Length;
+        }
+
         public static string GetElementName(SvgElement element, WpfDrawingContext context = null)
         {
             if (element == null)
@@ -93,6 +112,10 @@ namespace SharpVectors.Renderers.Wpf
             if (string.IsNullOrWhiteSpace(elementId))
             {
                 return string.Empty;
+            }
+            if (string.Equals(elementId, "svgbar"))
+            {
+                elementId = "svgbar";
             }
             elementId = elementId.Trim();
             if (IsValidIdentifier(elementId))
@@ -348,8 +371,8 @@ namespace SharpVectors.Renderers.Wpf
             catch (FormatException ex)
             {
                 Trace.TraceError(ex.GetType().Name + ": " + ex.Message);
-                return null;
-                //return CreateGeometry(element);
+                //return null;
+                return CreateGeometry(element);
             }
         }
 
@@ -380,11 +403,15 @@ namespace SharpVectors.Renderers.Wpf
             SvgPathSegArc pathArc         = null;
 
             SvgPathSegList segments = element.PathSegList;
-            int nElems = segments.NumberOfItems;
+            int numSegs = segments.NumberOfItems;
+            if (numSegs == 0)
+            {
+                return geometry;
+            }
 
             PathFigure pathFigure = null;
 
-            for (int i = 0; i < nElems; i++)
+            for (int i = 0; i < numSegs; i++)
             {
                 segment = segments.GetItem(i);
 

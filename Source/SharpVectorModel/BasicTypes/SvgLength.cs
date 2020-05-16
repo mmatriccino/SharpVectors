@@ -29,7 +29,7 @@ namespace SharpVectors.Dom.Svg
     {
         #region Private Fields
 
-        private static Regex ReUnit = new Regex(CssValue.LengthUnitPattern + "$");
+        private static readonly Regex ReUnit = new Regex(CssValue.LengthUnitPattern + "$");
 
         private string _defaultValue;
         private string _propertyName;
@@ -174,7 +174,9 @@ namespace SharpVectors.Dom.Svg
                         break;
                     case SvgLengthType.Percentage:
                         double valueInSpecifiedUnits = _cssLength.GetFloatValue(CssPrimitiveType.Percentage);
-                        if (_ownerElement is SvgGradientElement)
+                        // if (_ownerElement is SvgGradientElement)
+                        if (string.Equals(_ownerElement.LocalName, "radialGradient", StringComparison.Ordinal)
+                            || string.Equals(_ownerElement.LocalName, "linearGradient", StringComparison.Ordinal))
                         {
                             ret = valueInSpecifiedUnits / 100F;
                         }

@@ -10,9 +10,9 @@ using System.Windows;
 [assembly: AssemblyTitle("WpfW3cSvgTestSuite")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Elinam LLC")]
+[assembly: AssemblyCompany("Elinam LLC, Japan")]
 [assembly: AssemblyProduct("WpfW3cSvgTestSuite")]
-[assembly: AssemblyCopyright("Copyright © Elinam LLC 2010")]
+[assembly: AssemblyCopyright("Copyright © 2010 - 2019 Elinam LLC")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -50,5 +50,5 @@ using System.Windows;
 //
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]

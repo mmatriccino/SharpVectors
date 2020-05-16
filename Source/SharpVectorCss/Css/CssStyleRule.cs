@@ -15,30 +15,31 @@ namespace SharpVectors.Dom.Css
     {
         #region Static members
 
-        internal static string nsPattern = @"([A-Za-z\*][A-Za-z0-9]*)?\|";
-        internal static string attributeValueCheck = "(?<attname>(" + nsPattern + ")?[_a-zA-Z0-9\\-]+)\\s*(?<eqtype>[\\~\\^\\$\\*\\|]?)=\\s*(\"|\')?(?<attvalue>.*?)(\"|\')?";
+        internal static readonly string NsPattern           = @"([A-Za-z\*][A-Za-z0-9]*)?\|";
+        internal static readonly string AttributeValueCheck = "(?<attname>(" + NsPattern + ")?[_a-zA-Z0-9\\-]+)\\s*(?<eqtype>[\\~\\^\\$\\*\\|]?)=\\s*(\"|\')?(?<attvalue>.*?)(\"|\')?";
 
-        internal static string sSelector = "(?<ns>" + nsPattern + ")?" +
+        internal static readonly string RegexSelector = "(?<ns>" + NsPattern + ")?" +
             @"(?<type>([A-Za-z\*][A-Za-z0-9]*))?" +
             @"((?<class>\.[A-Za-z][_A-Za-z0-9\-]*)+)?" +
             @"(?<id>\#[A-Za-z][_A-Za-z0-9\-]*)?" +
             @"((?<predicate>\[\s*(" +
-            @"(?<attributecheck>(" + nsPattern + ")?[a-zA-Z0-9]+)" +
+            @"(?<attributecheck>(" + NsPattern + ")?[a-zA-Z0-9]+)" +
             @"|" +
-            "(?<attributevaluecheck>" + attributeValueCheck + ")" +
+            "(?<attributevaluecheck>" + AttributeValueCheck + ")" +
             @")\s*\])+)?" +
             @"((?<pseudoclass>\:[a-z\-]+(\([^\)]+\))?)+)?" +
             @"(?<pseudoelements>(\:\:[a-z\-]+)+)?" +
             @"(?<seperator>(\s*(\+|\>|\~)\s*)|(\s+))?";
-        private static string sStyleRule = "^((?<selector>(" + sSelector + @")+)(\s*,\s*)?)+";
-        private static Regex regex = new Regex(sStyleRule);
+
+        private static readonly string StyleRule = "^((?<selector>(" + RegexSelector + @")+)(\s*,\s*)?)+";
+        private static readonly Regex _reStyleRule = new Regex(StyleRule);
         
         #endregion
 
         #region Private Fields
 
         private CssXPathSelector[] _xPathSelectors;
-        private CssStyleDeclaration _Style;
+        private CssStyleDeclaration _style;
 
         #endregion
 
@@ -109,14 +110,21 @@ namespace SharpVectors.Dom.Css
         internal static CssRule Parse(ref string css, object parent, bool readOnly,
             IList<string> replacedStrings, CssStyleSheetType origin)
         {
-            Match match = regex.Match(css);
+            Match match = _reStyleRule.Match(css);
             if (match.Success && match.Length > 0)
             {
                 CssStyleRule rule = new CssStyleRule(match, parent, readOnly, replacedStrings, origin);
 
                 css = css.Substring(match.Length);
 
-                rule._Style = new CssStyleDeclaration(ref css, rule, readOnly, origin);
+                if (string.IsNullOrWhiteSpace(css))
+                {
+                    rule._style = CssStyleDeclaration.EmptyCssStyle;
+                }
+                else
+                {
+                    rule._style = new CssStyleDeclaration(ref css, rule, readOnly, origin);
+                }
 
                 return rule;
             }
@@ -167,7 +175,7 @@ namespace SharpVectors.Dom.Css
         public ICssStyleDeclaration Style
         {
             get {
-                return _Style;
+                return _style;
             }
         }
 

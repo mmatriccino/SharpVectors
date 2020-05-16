@@ -33,6 +33,8 @@ namespace SharpVectors.Converters
         private bool _saveZaml;
         private bool _useFrameXamlWriter;
 
+        protected bool _isEmbedded;
+
         protected SolidColorBrush _background;
 
         protected WpfDrawingSettings _wpfSettings;
@@ -234,7 +236,7 @@ namespace SharpVectors.Converters
 
         #region Protected Methods
 
-        protected virtual void BeginProcessing()
+        protected virtual void BeginProcessing(WpfDrawingDocument drawingDocument = null)
         {
             if (_wpfSettings == null)
             {
@@ -277,7 +279,7 @@ namespace SharpVectors.Converters
                 _wpfRenderer.ImageVisitor      = imageVisitor;
                 _wpfRenderer.FontFamilyVisitor = fontFamilyVisitor;
 
-                _wpfRenderer.BeginRender();
+                _wpfRenderer.BeginRender(drawingDocument);
             }
         }
 
@@ -287,8 +289,18 @@ namespace SharpVectors.Converters
             {
                 _wpfRenderer.EndRender();
             }
-            //TODO: Currently, experimental
-            GC.Collect();
+
+            if (!_isEmbedded)
+            {
+                if (_wpfSettings != null)
+                {
+                    var visitors = _wpfSettings.Visitors;
+                    if (visitors != null)
+                    {
+                        visitors.Uninitialize();
+                    }
+                }
+            }
         }
 
         protected static BitmapEncoder GetBitmapEncoder(ImageEncoderType encoderType)

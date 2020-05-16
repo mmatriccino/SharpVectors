@@ -118,7 +118,7 @@ namespace SharpVectors.Renderers.Gdi
             //    return;
             //}
 
-            SvgTextElement textElement = _svgElement as SvgTextElement;
+            SvgTextBaseElement textElement = _svgElement as SvgTextBaseElement;
             if (textElement == null)
             {
                 return;
@@ -373,7 +373,7 @@ namespace SharpVectors.Renderers.Gdi
 
             if (sBaselineShift.Length > 0)
             {
-                SvgTextElement textElement = (SvgTextElement)element.SelectSingleNode("ancestor::svg:text",
+                SvgTextBaseElement textElement = (SvgTextBaseElement)element.SelectSingleNode("ancestor::svg:text",
                     element.OwnerDocument.NamespaceManager);
 
                 float textFontSize = GetComputedFontSize(textElement);
@@ -443,17 +443,17 @@ namespace SharpVectors.Renderers.Gdi
                 style = style | (int)FontStyle.Bold;
             }
 
-            if (element.GetPropertyValue("font-style") == "italic")
+            if (string.Equals(element.GetPropertyValue("font-style"), "italic", comparer))
             {
                 style = style | (int)FontStyle.Italic;
             }
 
             string textDeco = element.GetPropertyValue("text-decoration");
-            if (textDeco == "line-through")
+            if (string.Equals(textDeco, "line-through", comparer))
             {
                 style = style | (int)FontStyle.Strikeout;
             }
-            else if (textDeco == "underline")
+            else if (string.Equals(textDeco, "underline", comparer))
             {
                 style = style | (int)FontStyle.Underline;
             }

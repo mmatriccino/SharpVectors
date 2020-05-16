@@ -7,14 +7,14 @@ namespace SharpVectors.Dom.Svg
     /// </summary>
     public sealed class SvgAnimatedNumber : ISvgAnimatedNumber
     {
-		#region Private Fields
+        #region Private Fields
 
         private double _baseVal;
         private double _animVal;
-		
+
         #endregion
 
-		#region Constructors
+        #region Constructors
 
         public SvgAnimatedNumber(string str)
         {
@@ -22,30 +22,42 @@ namespace SharpVectors.Dom.Svg
             _animVal = _baseVal;
         }
 
-		#endregion
+        public SvgAnimatedNumber(double value)
+        {
+            _baseVal = value;
+            _animVal = value;
+        }
+
+        public SvgAnimatedNumber(double baseVal, double animVal)
+        {
+            _baseVal = baseVal;
+            _animVal = animVal;
+        }
+
+        #endregion
 
         #region ISvgAnimatedNumber Interface
 
         public double BaseVal
         {
-            get
-            {
+            get {
                 return _baseVal;
             }
-            set
-            {
+            set {
                 _baseVal = value;
             }
         }
 
         public double AnimVal
         {
-            get
-            {
+            get {
                 return _animVal;
+            }
+            set {
+                _animVal = value;
             }
         }
 
-		#endregion
+        #endregion
     }
 }

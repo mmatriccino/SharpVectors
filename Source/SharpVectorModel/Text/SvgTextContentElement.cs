@@ -87,23 +87,28 @@ namespace SharpVectors.Dom.Svg
 
         #region ISvgTextContentElement Members
 
-        public ISvgAnimatedLength TextLength
+        public virtual ISvgAnimatedLength LetterSpacing
         {
             get { throw new NotImplementedException(); }
         }
 
-        public ISvgAnimatedEnumeration LengthAdjust
+        public virtual ISvgAnimatedLength TextLength
         {
             get { throw new NotImplementedException(); }
         }
 
-        protected SvgTextElement OwnerTextElement
+        public virtual ISvgAnimatedEnumeration LengthAdjust
+        {
+            get { throw new NotImplementedException(); }
+        }
+
+        protected SvgTextBaseElement OwnerTextElement
         {
             get {
                 XmlNode node = this;
                 while (node != null)
                 {
-                    SvgTextElement text = node as SvgTextElement;
+                    SvgTextBaseElement text = node as SvgTextBaseElement;
                     if (text != null)
                     {
                         return text;

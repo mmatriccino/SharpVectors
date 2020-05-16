@@ -3,6 +3,7 @@ using System.Xml;
 using System.Windows;
 using System.Windows.Media;
 
+using SharpVectors.Dom.Css;
 using SharpVectors.Dom.Svg;
 using SharpVectors.Renderers.Utils;
 
@@ -24,9 +25,9 @@ namespace SharpVectors.Renderers.Wpf
         public WpfSvgPaint(WpfDrawingContext context, SvgStyleableElement elm, string propName)
             : base(elm.GetComputedStyle("").GetPropertyValue(propName))
         {
-            _propertyName = propName;
-            _element      = elm;
-            _context      = context;
+            _propertyName  = propName;
+            _element       = elm;
+            _context       = context;
         }
 
         private WpfSvgPaint(string str)
@@ -186,7 +187,16 @@ namespace SharpVectors.Renderers.Wpf
                 stroke = this;
             }
 
-            Pen pen = new Pen(stroke.GetBrush(geometry, "stroke", setOpacity), strokeWidth);
+            Brush brush = stroke.GetBrush(geometry, "stroke", setOpacity);
+            if (brush == null)
+            {
+                WpfSvgPaint fallbackPaint = stroke.WpfFallback;
+                if (fallbackPaint != null)
+                {
+                    brush = fallbackPaint.GetBrush(geometry, "stroke", setOpacity);
+                }
+            }
+            Pen pen = new Pen(brush, strokeWidth);
 
             pen.StartLineCap  = pen.EndLineCap = GetLineCap();
             pen.LineJoin      = GetLineJoin();
@@ -232,6 +242,130 @@ namespace SharpVectors.Renderers.Wpf
                 return paintContext.Stroke;
             }
             return null;
+        }
+
+        private static bool Equals(double number1, double number2)
+        {
+            return number1.Equals(number2);
+        }
+
+        private static bool Equals(GradientStop stop1, GradientStop stop2)
+        {
+            if (stop1 == null && stop2 == null)
+            {
+                return true;
+            }
+            if (stop1 == null || stop2 == null)
+            {
+                return false;
+            }
+            return Color.Equals(stop1.Color, stop2.Color) && stop1.Offset.Equals(stop2.Offset);
+        }
+
+        private static bool Equals(Transform transform1, Transform transform2)
+        {
+            if (transform1 == null && transform2 == null)
+            {
+                return true;
+            }
+            if (transform1 == null || transform2 == null)
+            {
+                return false;
+            }
+            return Matrix.Equals(transform1.Value, transform2.Value);
+        }
+
+        public static bool IsEqual(Brush brush1, Brush brush2)
+        {
+            if (brush1.GetType() != brush2.GetType())
+                return false;
+
+            if (brush1 is SolidColorBrush)
+            {
+                var wpfBrush1 = (SolidColorBrush)brush1;
+                var wpfBrush2 = (SolidColorBrush)brush2;
+
+                return Color.Equals(wpfBrush1.Color, wpfBrush2.Color) 
+                    && Equals(wpfBrush1.Opacity, wpfBrush2.Opacity) 
+                    && Equals(wpfBrush1.Transform, wpfBrush2.Transform);
+            }
+            if (brush1 is LinearGradientBrush)
+            {
+                var wpfBrush1 = (LinearGradientBrush)brush1;
+                var wpfBrush2 = (LinearGradientBrush)brush2;
+
+                if (wpfBrush1.ColorInterpolationMode != wpfBrush2.ColorInterpolationMode
+                    || wpfBrush1.EndPoint != wpfBrush2.EndPoint
+                    || wpfBrush1.MappingMode != wpfBrush2.MappingMode
+                    || !wpfBrush1.Opacity.Equals(wpfBrush2.Opacity)
+                    || wpfBrush1.StartPoint != wpfBrush2.StartPoint
+                    || wpfBrush1.SpreadMethod != wpfBrush2.SpreadMethod
+                    || !Equals(wpfBrush1.Transform, wpfBrush2.Transform)
+                    || wpfBrush1.GradientStops.Count != wpfBrush2.GradientStops.Count)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < wpfBrush1.GradientStops.Count; i++)
+                {
+                    if (!Equals(wpfBrush1.GradientStops[i], wpfBrush2.GradientStops[i]))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            if (brush1 is RadialGradientBrush)
+            {
+                var wpfBrush1 = (RadialGradientBrush)brush1;
+                var wpfBrush2 = (RadialGradientBrush)brush2;
+
+                if (wpfBrush1.ColorInterpolationMode != wpfBrush2.ColorInterpolationMode
+                    || wpfBrush1.GradientOrigin != wpfBrush2.GradientOrigin
+                    || wpfBrush1.MappingMode != wpfBrush2.MappingMode
+                    || !wpfBrush1.Opacity.Equals(wpfBrush2.Opacity)
+                    || !wpfBrush1.RadiusX.Equals(wpfBrush2.RadiusX)
+                    || !wpfBrush1.RadiusY.Equals(wpfBrush2.RadiusY)
+                    || wpfBrush1.SpreadMethod != wpfBrush2.SpreadMethod
+                    || !Equals(wpfBrush1.Transform, wpfBrush2.Transform)
+                    || wpfBrush1.GradientStops.Count != wpfBrush2.GradientStops.Count)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < wpfBrush1.GradientStops.Count; i++)
+                {
+                    if (!Equals(wpfBrush1.GradientStops[i], wpfBrush2.GradientStops[i]))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            if (brush1 is ImageBrush)
+            {
+                var wpfBrush1 = (ImageBrush)brush1;
+                var wpfBrush2 = (ImageBrush)brush2;
+
+                if (wpfBrush1.AlignmentX != wpfBrush2.AlignmentX
+                    || wpfBrush1.AlignmentY != wpfBrush2.AlignmentY
+                    || !wpfBrush1.Opacity.Equals(wpfBrush2.Opacity)
+                    || wpfBrush1.Stretch != wpfBrush2.Stretch
+                    || wpfBrush1.TileMode != wpfBrush2.TileMode
+                    || wpfBrush1.Viewbox != wpfBrush2.Viewbox
+                    || wpfBrush1.ViewboxUnits != wpfBrush2.ViewboxUnits
+                    || wpfBrush1.Viewport != wpfBrush2.Viewport
+                    || wpfBrush1.ViewportUnits != wpfBrush2.ViewportUnits
+                    || !Equals(wpfBrush1.Transform, wpfBrush2.Transform)
+                    || wpfBrush1.ImageSource != wpfBrush2.ImageSource)
+                {
+                    return false;
+                }
+                return true;
+            }
+            return false;
         }
 
         #endregion
@@ -373,7 +507,7 @@ namespace SharpVectors.Renderers.Wpf
             }                 
 
             string miterLimitStr = _element.GetPropertyValue("stroke-miterlimit");
-            if (string.IsNullOrWhiteSpace(miterLimitStr) || (float)(strokeWidth) <= 0)
+            if (string.IsNullOrWhiteSpace(miterLimitStr) || (float)strokeWidth <= 0)
             {
                 return -1.0d;
             }
@@ -462,7 +596,9 @@ namespace SharpVectors.Renderers.Wpf
                 SvgStyleableElement styleElm = _element.ImportNode as SvgStyleableElement;
                 if (styleElm != null)
                 {
-                    string propertyValue = styleElm.GetComputedStyle("").GetPropertyValue(_propertyName);
+                    var cssDeclaration = styleElm.GetComputedStyle("");
+
+                    string propertyValue = cssDeclaration.GetPropertyValue(_propertyName);
 
                     if (!string.IsNullOrWhiteSpace(propertyValue))
                     {
@@ -626,6 +762,60 @@ namespace SharpVectors.Renderers.Wpf
                 return null;
             }
 
+            if (fill.RgbColor.IsVarColor)
+            {
+                var cssVar = this.GetVarsValue(fill);
+                if (cssVar != null)
+                {
+                    var cssVariables = _context.Settings.CssVariables;
+                    if (cssVariables != null && cssVariables.ContainsKey(cssVar.VarName))
+                    {
+                        var cssColor = new CssColor(cssVariables[cssVar.VarName]);
+                        Color? varColor = WpfConvert.ToColor(cssColor);
+                        if (varColor != null)
+                        {
+                            var varBrush = new SolidColorBrush(varColor.Value);
+                            if (setOpacity)
+                            {
+                                varBrush.Opacity = GetOpacity(propPrefix);
+                            }
+                            return varBrush;
+                        }
+                    }
+
+                    var cssValue = _element.GetComputedCssValue(cssVar.VarName, string.Empty) as CssAbsPrimitiveValue;
+                    if (cssValue != null)
+                    {
+                        Color? varColor = WpfConvert.ToColor(cssValue.GetRgbColorValue());
+                        if (varColor != null)
+                        {
+                            var varBrush = new SolidColorBrush(varColor.Value);
+                            if (setOpacity)
+                            {
+                                varBrush.Opacity = GetOpacity(propPrefix);
+                            }
+                            return varBrush;
+                        }
+                    }
+
+                    var fallbackValue = cssVar.VarValue;
+                    if (!string.IsNullOrWhiteSpace(fallbackValue))
+                    {
+                        var cssColor = new CssColor(fallbackValue);
+                        Color? varColor = WpfConvert.ToColor(cssColor);
+                        if (varColor != null)
+                        {
+                            var varBrush = new SolidColorBrush(varColor.Value);
+                            if (setOpacity)
+                            {
+                                varBrush.Opacity = GetOpacity(propPrefix);
+                            }
+                            return varBrush;
+                        }
+                    }
+                }
+            }
+
             Color? solidColor = WpfConvert.ToColor(fill.RgbColor);
             if (solidColor == null)
             {
@@ -638,6 +828,37 @@ namespace SharpVectors.Renderers.Wpf
                 solidBrush.Opacity = GetOpacity(propPrefix);
             }
             return solidBrush;
+        }
+
+        private CssPrimitiveVarsValue GetVarsValue(WpfSvgPaint fill)
+        {
+            if (fill == null || fill.RgbColor == null)
+            {
+                return null;
+            }
+            if (!fill.RgbColor.IsVarColor)
+            {
+                return null;
+            }
+            var cssDeclaration = _element.GetComputedStyle("");
+            if (cssDeclaration == null)
+            {
+                return null;
+            }
+            var cssValue = cssDeclaration.GetPropertyCssValue("fill");
+            if (cssValue == null)
+            {
+                return null;
+            }
+            if (cssValue.IsAbsolute)
+            {
+                var cssAbs = cssValue as CssAbsPrimitiveValue;
+                if (cssAbs != null && cssAbs.CssValue != null)
+                {
+                    return cssAbs.CssValue as CssPrimitiveVarsValue;
+                }
+            }
+            return cssValue as CssPrimitiveVarsValue;
         }
 
         #endregion

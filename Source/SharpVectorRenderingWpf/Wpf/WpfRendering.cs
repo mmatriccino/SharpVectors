@@ -16,16 +16,16 @@ namespace SharpVectors.Renderers.Wpf
     {
         #region Private Fields
 
-        private static Regex _reUrl = new Regex(@"^url\((?<uri>.+)\)$", RegexOptions.Compiled);
+        private static Regex _reUrl  = new Regex(@"^url\((?<uri>.+)\)$", RegexOptions.Compiled);
+        private static object _synch = new object();
+        private static IDictionary<string, WpfRendering> _cacheRendering;
 
         private Geometry _clipGeometry;
         private Transform _transformMatrix;
         private Brush _maskBrush;
 
         private SvgUnitType _clipPathUnits;
-
         private SvgUnitType _maskUnits;
-
         private SvgUnitType _maskContentUnits;
 
         private bool _combineTransforms;
@@ -152,14 +152,47 @@ namespace SharpVectors.Renderers.Wpf
 
         public static WpfRendering Create(ISvgElement element)
         {
-            if (element == null)
+            lock(_synch)
             {
-                return null;
+                if (element == null)
+                {
+                    return null;
+                }
+                if (_cacheRendering == null)
+                {
+                    _cacheRendering = new Dictionary<string, WpfRendering>(StringComparer.Ordinal);
+                }
+                SvgElement svgElement = (SvgElement)element;
+                string localName = svgElement.LocalName;
+                if (!string.IsNullOrWhiteSpace(localName))
+                {
+                    if (_cacheRendering.ContainsKey(localName))
+                    {
+                        var wpfRendering = _cacheRendering[localName];
+                        if (wpfRendering.IsReady)
+                        {
+                            wpfRendering.Initialize(svgElement);
+
+                            wpfRendering.IsReady = false;
+                            return wpfRendering;
+                        }
+                    }
+                    else
+                    {
+                        var wpfRendering = CreateRendering(svgElement);
+                        _cacheRendering.Add(localName, wpfRendering);
+
+                        wpfRendering.IsReady = false;
+                        return wpfRendering;
+                    }
+                }
+                return CreateRendering(svgElement);
             }
+        }
 
-            SvgElement svgElement = (SvgElement)element;
-
-            SvgRenderingHint hint = element.RenderingHint;
+        private static WpfRendering CreateRendering(SvgElement svgElement)
+        {
+            SvgRenderingHint hint = svgElement.RenderingHint;
             // For the shapes and text contents...
             if (hint == SvgRenderingHint.Shape)
             {
@@ -170,7 +203,7 @@ namespace SharpVectors.Renderers.Wpf
                 return new WpfTextRendering(svgElement);
             }
 
-            string localName = element.LocalName;
+            string localName = svgElement.LocalName;
             if (string.IsNullOrWhiteSpace(localName))
             {
                 return new WpfRendering(svgElement);
@@ -194,6 +227,8 @@ namespace SharpVectors.Renderers.Wpf
                     return new WpfImageRendering(svgElement);
                 case "marker":
                     return new WpfMarkerRendering(svgElement);
+                case "pattern":
+                    return new WpfPatternRendering(svgElement);
             }
 
             return new WpfRendering(svgElement);
@@ -236,15 +271,25 @@ namespace SharpVectors.Renderers.Wpf
             {
                 return WpfRendering.Create(elm);
             }
-            else
-            {
-                return null;
-            }
+            return null;
         }
 
         #endregion
 
         #region Protected Methods
+
+        protected override void Initialize(SvgElement element)
+        {
+            base.Initialize(element);
+
+            _clipGeometry     = null;
+            _transformMatrix  = null;
+            _maskBrush        = null;
+
+            _maskUnits        = SvgUnitType.UserSpaceOnUse;
+            _clipPathUnits    = SvgUnitType.UserSpaceOnUse;
+            _maskContentUnits = SvgUnitType.UserSpaceOnUse;
+        }
 
         protected SvgTitleElement GetTitleElement()
         {
@@ -646,9 +691,8 @@ namespace SharpVectors.Renderers.Wpf
             if (transElm != null)
             {
                 SvgTransformList transformList = (SvgTransformList)transElm.Transform.AnimVal;
-                if (transformList.NumberOfItems > 1 && _combineTransforms == false)
+                if (transformList.NumberOfItems != 0 && _combineTransforms == false)
                 {
-                    TransformGroup transformGroup = new TransformGroup();
                     List<Transform> transforms = new List<Transform>();
 
                     for (uint i = 0; i < transformList.NumberOfItems; i++)
@@ -660,75 +704,68 @@ namespace SharpVectors.Renderers.Wpf
                             case SvgTransformType.Translate:
                                 if (values.Length == 1)
                                 {
-                                    // SetTranslate(values[0], 0);
-                                    //transformGroup.Children.Add(new TranslateTransform(values[0], 0));
                                     transforms.Add(new TranslateTransform(values[0], 0));
                                 }
                                 else if (values.Length == 2)
                                 {
-                                    // SetTranslate(values[0], values[1]);                        
-                                    //transformGroup.Children.Add(new TranslateTransform(values[0], values[1]));
                                     transforms.Add(new TranslateTransform(values[0], values[1]));
                                 }
                                 break;
                             case SvgTransformType.Rotate:
                                 if (values.Length == 1)
                                 {
-                                    // SetRotate(values[0]);
-                                    //transformGroup.Children.Add(new RotateTransform(values[0]));
                                     transforms.Add(new RotateTransform(values[0]));
                                 }
                                 else if (values.Length == 3)
                                 {
-                                    // SetRotate(values[0], values[1], values[2]);
-                                    //transformGroup.Children.Add(new RotateTransform(values[0], values[1], values[2]));
                                     transforms.Add(new RotateTransform(values[0], values[1], values[2]));
                                 }
                                 break;
                             case SvgTransformType.Scale:
                                 if (values.Length == 1)
                                 {
-                                    //SetScale(values[0], values[0]);
-                                    transformGroup.Children.Add(new ScaleTransform(values[0], values[0]));
+                                    transforms.Add(new ScaleTransform(values[0], values[0]));
                                 }
                                 else if (values.Length == 2)
                                 {
-                                    //SetScale(values[0], values[1]);
-                                    //transformGroup.Children.Add(new ScaleTransform(values[0], values[1]));
                                     transforms.Add(new ScaleTransform(values[0], values[1]));
                                 }
                                 break;
                             case SvgTransformType.SkewX:
                                 if (values.Length == 1)
                                 {
-                                    //SetSkewX(values[0]);
-                                    //transformGroup.Children.Add(new SkewTransform(values[0], 0));
                                     transforms.Add(new SkewTransform(values[0], 0));
                                 }
                                 break;
                             case SvgTransformType.SkewY:
                                 if (values.Length == 1)
                                 {
-                                    //SetSkewY(values[0]);                        
-                                    //transformGroup.Children.Add(new SkewTransform(0, values[0]));
                                     transforms.Add(new SkewTransform(0, values[0]));
                                 }
                                 break;
                             case SvgTransformType.Matrix:
                                 if (values.Length == 6)
                                 {
-                                    //SetMatrix(new SvgMatrix(values[0], values[1], values[2], values[3], values[4], values[5]));
-                                    //transformGroup.Children.Add(new MatrixTransform(values[0], values[1], values[2], values[3], values[4], values[5]));
                                     transforms.Add(new MatrixTransform(values[0], values[1], values[2], values[3], values[4], values[5]));
                                 }
                                 break;
                         }
                     }
 
-                    transforms.Reverse();
-                    transformGroup.Children = new TransformCollection(transforms);
-                    _transformMatrix = transformGroup;
-                    //_transformMatrix = new MatrixTransform(transformGroup.Value);
+                    if (transforms.Count == 1)
+                    {
+                        _transformMatrix = transforms[0];
+
+                    }
+                    else if(transforms.Count > 1)
+                    {
+                        transforms.Reverse();
+
+                        TransformGroup transformGroup = new TransformGroup();
+                        transformGroup.Children = new TransformCollection(transforms);
+                        _transformMatrix = transformGroup;
+                    }
+
                     return;
                 }
                 SvgMatrix svgMatrix = transformList.TotalMatrix;
@@ -738,9 +775,9 @@ namespace SharpVectors.Renderers.Wpf
                     return;
                 }
 
-                _transformMatrix = new MatrixTransform(Math.Round(svgMatrix.A, 4), Math.Round(svgMatrix.B, 4),
-                    Math.Round(svgMatrix.C, 4), Math.Round(svgMatrix.D, 4), 
-                    Math.Round(svgMatrix.E, 4), Math.Round(svgMatrix.F, 4));
+                _transformMatrix = new MatrixTransform(Math.Round(svgMatrix.A, 6), Math.Round(svgMatrix.B, 6),
+                    Math.Round(svgMatrix.C, 6), Math.Round(svgMatrix.D, 6), 
+                    Math.Round(svgMatrix.E, 6), Math.Round(svgMatrix.F, 6));
             }
         }
 
@@ -757,10 +794,10 @@ namespace SharpVectors.Renderers.Wpf
             double[] transformArray = spar.FitToViewBox((SvgRect)fitToView.ViewBox.AnimVal,
               new SvgRect(elementBounds.X, elementBounds.Y, elementBounds.Width, elementBounds.Height));
 
-            double translateX = Math.Round(transformArray[0], 4);
-            double translateY = Math.Round(transformArray[1], 4);
-            double scaleX     = Math.Round(transformArray[2], 4);
-            double scaleY     = Math.Round(transformArray[3], 4);
+            double translateX = Math.Round(transformArray[0], 6);
+            double translateY = Math.Round(transformArray[1], 6);
+            double scaleX     = Math.Round(transformArray[2], 6);
+            double scaleY     = Math.Round(transformArray[3], 6);
 
             Transform translateMatrix = null;
             Transform scaleMatrix = null;
@@ -826,10 +863,10 @@ namespace SharpVectors.Renderers.Wpf
 
             double[] transformArray = spar.FitToViewBox(viewBox, rectToFit);
 
-            double translateX = Math.Round(transformArray[0], 4);
-            double translateY = Math.Round(transformArray[1], 4);
-            double scaleX     = Math.Round(transformArray[2], 4);
-            double scaleY     = Math.Round(transformArray[3], 4);
+            double translateX = Math.Round(transformArray[0], 6);
+            double translateY = Math.Round(transformArray[1], 6);
+            double scaleX     = Math.Round(transformArray[2], 6);
+            double scaleY     = Math.Round(transformArray[3], 6);
 
             Transform translateMatrix = null;
             Transform scaleMatrix = null;
@@ -1084,7 +1121,7 @@ namespace SharpVectors.Renderers.Wpf
                 string markerAll       = ExtractMarkerUrl(styleElm.GetPropertyValue("marker", "marker"));
 
                 //  The SVG specification defines three properties to reference markers: marker-start, 
-                // marker -mid, marker-end. It also provides a shorthand property,marker. Using the marker 
+                // marker -mid, marker-end. It also provides a shorthand property, marker. Using the marker 
                 // property from a style sheet is equivalent to using all three (start, mid, end). 
                 // However, shorthand properties cannot be used as presentation attributes.
                 if (!string.IsNullOrWhiteSpace(markerAll) && !IsPresentationMarker(styleElm))

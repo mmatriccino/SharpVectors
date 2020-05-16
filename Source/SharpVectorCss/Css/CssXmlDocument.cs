@@ -6,6 +6,7 @@ using System.Collections.Generic;
 
 using SharpVectors.Net;
 using SharpVectors.Dom.Stylesheets;
+using SharpVectors.Dom.Views;
 
 namespace SharpVectors.Dom.Css
 {
@@ -145,13 +146,20 @@ namespace SharpVectors.Dom.Css
             }
         }
 
+        public IDocumentView Document { get => throw new NotImplementedException(); }
+
         #endregion
 
         #region Public Methods
 
         public override XmlElement CreateElement(string prefix, string localName, string ns)
         {
-            return new CssXmlElement(prefix, localName, ns, this);
+            if (string.Equals(localName, "style", StringComparison.OrdinalIgnoreCase))
+            {
+                return new CssXmlElement(prefix, localName, ns, this);
+            }
+
+            return base.CreateElement(prefix, localName, ns);
         }
 
         /// <summary>

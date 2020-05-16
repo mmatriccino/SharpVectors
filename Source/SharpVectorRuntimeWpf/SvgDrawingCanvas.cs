@@ -25,7 +25,7 @@ namespace SharpVectors.Runtime
     {
         #region Private Fields
 
-        private static readonly Action EmptyDelegate = delegate { };
+        //private static readonly Action EmptyDelegate = delegate { };
 
         private bool _drawForInteractivity;
 
@@ -747,7 +747,7 @@ namespace SharpVectors.Runtime
 
                 _bounds = rectBounds;
 
-                if (_offsetX > 0 || _offsetY > 0)
+                if (!_offsetX.Equals(0) || !_offsetY.Equals(0))
                 {
                     offsetTransform   = new TranslateTransform(-_offsetX, -_offsetY);  
                     _displayTransform = new TranslateTransform(_offsetX, _offsetY); // the inverse...
@@ -1182,8 +1182,8 @@ namespace SharpVectors.Runtime
 
         private static bool IsValidBounds(Rect rectBounds)
         {
-            if (rectBounds.IsEmpty || Double.IsNaN(rectBounds.Width) || Double.IsNaN(rectBounds.Height)
-                || Double.IsInfinity(rectBounds.Width) || Double.IsInfinity(rectBounds.Height))
+            if (rectBounds.IsEmpty || double.IsNaN(rectBounds.Width) || double.IsNaN(rectBounds.Height)
+                || double.IsInfinity(rectBounds.Width) || double.IsInfinity(rectBounds.Height))
             {
                 return false;
             }

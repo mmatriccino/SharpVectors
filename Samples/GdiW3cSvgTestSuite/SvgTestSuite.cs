@@ -23,7 +23,7 @@ namespace GdiW3cSvgTestSuite
         private const string W3CTestPrefix   = "SvgTestSuite";
         private const string W3CResultPrefix = "SvgTestResults";
 
-        private const string LocalDirBase    = @"..\..\W3cSvgTestSuites\";
+        private const string LocalDirBase    = @"..\..\..\W3cSvgTestSuites\";
         private const string WebDirBase      = "https://github.com/ElinamLLC/SharpVectors-TestSuites/raw/master/";
 
         private static readonly string[] Descriptions = {
@@ -50,6 +50,9 @@ namespace GdiW3cSvgTestSuite
 
         private string _testFileName;
         private string _resultFileName;
+
+        private int _majorVersion;
+        private int _minorVersion;
 
         #endregion
 
@@ -84,12 +87,17 @@ namespace GdiW3cSvgTestSuite
             _localSuitePath = source._localSuitePath;
             _testFileName   = source._testFileName;
             _resultFileName = source._resultFileName;
+            _majorVersion   = source._majorVersion;
+            _minorVersion   = source._minorVersion;
         }
 
         private SvgTestSuite(int majorVersion, int minorVersion)
         {
             if (majorVersion == 1 && (minorVersion >= 0 && minorVersion <= 2))
             {
+                _majorVersion   = majorVersion;
+                _minorVersion   = minorVersion;
+
                 string versionSuffix = string.Format("{0}{1}", majorVersion, minorVersion);
 
                 _isDefault      = (majorVersion == 1 && minorVersion == 0);
@@ -135,6 +143,26 @@ namespace GdiW3cSvgTestSuite
             }
             private set {
                 _isSelected = value;
+            }
+        }
+
+        public int MajorVersion
+        {
+            get {
+                return _majorVersion;
+            }
+            private set {
+                this._majorVersion = value;
+            }
+        }
+
+        public int MinorVersion
+        {
+            get {
+                return _minorVersion;
+            }
+            private set {
+                this._minorVersion = value;
             }
         }
 
@@ -358,6 +386,12 @@ namespace GdiW3cSvgTestSuite
                         {
                             case "Version":
                                 _version = propertyValue;
+                                Version version;
+                                if (System.Version.TryParse(_version, out version))
+                                {
+                                    _majorVersion = version.Major;
+                                    _minorVersion = version.Minor;
+                                }
                                 break;
                             case "Description":
                                 _description = propertyValue;
@@ -444,38 +478,38 @@ namespace GdiW3cSvgTestSuite
 
             if (_version != null)
             {
-                clonedSuite._version = string.Copy(_version);
+                clonedSuite._version = new string(_version.ToCharArray());
             }
             if (_description != null)
             {
-                clonedSuite._description = string.Copy(_description);
+                clonedSuite._description = new string(_description.ToCharArray());
             }
 
             if (_suiteName != null)
             {
-                clonedSuite._suiteName = string.Copy(_suiteName);
+                clonedSuite._suiteName = new string(_suiteName.ToCharArray());
             }
             if (_suiteDirName != null)
             {
-                clonedSuite._suiteDirName = string.Copy(_suiteDirName);
+                clonedSuite._suiteDirName = new string(_suiteDirName.ToCharArray());
             }
 
             if (_testFileName != null)
             {
-                clonedSuite._testFileName = string.Copy(_testFileName);
+                clonedSuite._testFileName = new string(_testFileName.ToCharArray());
             }
             if (_resultFileName != null)
             {
-                clonedSuite._resultFileName = string.Copy(_resultFileName);
+                clonedSuite._resultFileName = new string(_resultFileName.ToCharArray());
             }
 
             if (_webSuitePath != null)
             {
-                clonedSuite._webSuitePath = string.Copy(_webSuitePath);
+                clonedSuite._webSuitePath = new string(_webSuitePath.ToCharArray());
             }
             if (_localSuitePath != null)
             {
-                clonedSuite._localSuitePath = string.Copy(_localSuitePath);
+                clonedSuite._localSuitePath = new string(_localSuitePath.ToCharArray());
             }
 
             return clonedSuite;

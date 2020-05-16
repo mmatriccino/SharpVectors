@@ -90,8 +90,7 @@ namespace WpfTestSvgSample
             this.Unloaded += OnWindowUnloaded;
             this.Closing  += OnWindowClosing;
 
-            _drawingDir = IoPath.Combine(IoPath.GetDirectoryName(
-                System.Reflection.Assembly.GetExecutingAssembly().Location), DrawingPage.TemporalDirName);
+            _drawingDir = IoPath.GetFullPath(IoPath.Combine("..\\", DrawingPage.TemporalDirName));
 
             if (!Directory.Exists(_drawingDir))
             {
@@ -99,7 +98,7 @@ namespace WpfTestSvgSample
             }
 
             _optionSettings = new OptionSettings();
-            _testSettingsPath = IoPath.GetFullPath(SvgTestSettings);
+            _testSettingsPath = IoPath.GetFullPath(IoPath.Combine("..\\", SvgTestSettings));
             if (!string.IsNullOrWhiteSpace(_testSettingsPath) && File.Exists(_testSettingsPath))
             {
                 _optionSettings.Load(_testSettingsPath);
@@ -1076,9 +1075,20 @@ namespace WpfTestSvgSample
                     string[] imageFiles = Directory.GetFiles(_drawingDir, "*.png");
                     if (imageFiles != null && imageFiles.Length != 0)
                     {
-                        foreach (var imageFile in imageFiles)
+                        try
                         {
-                            File.Delete(imageFile);
+                            foreach (var imageFile in imageFiles)
+                            {
+                                if (File.Exists(imageFile))
+                                {
+                                    File.Delete(imageFile);
+                                }
+                            }
+                        }
+                        catch (IOException ex)
+                        {
+                            Trace.TraceError(ex.ToString());
+                            // Image this, WPF will typically cache and/or lock loaded images
                         }
                     }
                 }
@@ -1107,7 +1117,7 @@ namespace WpfTestSvgSample
                 return;
             }
 
-            _sourceDir = string.Copy(sourceDir);
+            _sourceDir = new string(sourceDir.ToCharArray());
             _isRecursiveSearch = _optionSettings.RecursiveSearch;
 
             string[] svgFiles = Directory.GetFiles(sourceDir, SvgFilePattern, SearchOption.TopDirectoryOnly);
